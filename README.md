@@ -131,7 +131,78 @@ func main() {
 
 ## ⚗️ Fan-in
 
-Em breve
+Um fan-in copia dados de múltiplos canais de entrada e escreve em um único canal de saída. Normalmente um fan-in só termina quando todos os canais de entrada são fechados.
+
+A função fan-in pode receber vários canais entrada através de [parâmetros múltiplos](https://gobyexample.com/variadic-functions).
+
+No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
+
+Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. O tipo sync.WaitGroup fornece uma maneira simples de organizar essa sincronização.
+
+Repare que temos uma _goroutine_ que aguarda um sinal indicando que todas as todas entradas foram consumidas (wg.Wait), finalizando assim o canal de saída.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+func fanin(canais_entrada ...<-chan int) <-chan int {
+	var wg sync.WaitGroup
+	// canal de saída que será compartilhado entre os canais de entrada
+	canal_saida := make(chan int)
+
+	// lê os valores de cada canal de entrada e envia para o canal de saída
+	// quando todos os valores forem lidos, envia sinal avisando que terminou
+	output := func(c <-chan int) {
+		for n := range c {
+			canal_saida <- n
+		}
+		// aviso que terminou de ler os valores de um canal
+		wg.Done()
+	}
+	wg.Add(len(canais_entrada))
+	// Inicializa uma goroutine de saída para cada canal de entrada em canais_entrada.
+	for _, c := range canais_entrada {
+		go output(c)
+	}
+
+	// Inicia uma goroutine para fechar o canal de saída quando todas as
+	// goroutines de entrada terminarem.
+	// isto deve ser feito após o wg.Add
+	go func() {
+		wg.Wait()
+		close(canal_saida)
+	}()
+	return canal_saida
+}
+
+func sequencia_numeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+func main() {
+	canal := fanin(
+		sequencia_numeros(1, 10),
+		sequencia_numeros(11, 20),
+		sequencia_numeros(21, 30),
+	)
+	for valor := range canal {
+		fmt.Printf("valor: %v\n", valor)
+	}
+}
+
+```
 
 ## 📣 Fan-out
 
