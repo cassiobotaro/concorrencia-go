@@ -58,7 +58,7 @@ package main
 
 import "fmt"
 
-func sequencia_numeros(inicial, final int) <-chan int {
+func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
@@ -71,11 +71,45 @@ func sequencia_numeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	valores := sequencia_numeros(1, 1000)
+	valores := sequenciaNumeros(1, 1000)
 	for valor := range valores {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
+
+```
+
+## 🚧 Consumidores (workers)
+
+Um consumidor é uma _goroutine_ que recebe valores de um canal e os processa.
+
+No exemplo valores inteiros são enviados pela função principal (main) através do canal de entrada e processados por um trabalhador.
+
+É possível criar vários trabalhadores para processarem um mesmo canal.
+
+```go
+package main
+
+import "fmt"
+
+func trabalhador(canal_entrada <-chan int) {
+	for valor := range canal_entrada {
+		fmt.Printf("valor: %v\n", valor)
+	}
+}
+
+func main() {
+	entrada := make(chan int)
+	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
+	go trabalhador(entrada)
+	for i := 0; i < 10; i++ {
+		entrada <- i
+	}
+	// Após ter enviado todos os valores, fecha o canal de entrada
+	// avisando ao trabalhador que o trabalho terminou
+	close(entrada)
+}
+
 
 ```
 
@@ -87,7 +121,7 @@ No exemplo temos a função `dobroFloat` atuando como um _pipeline_, que irá re
 
 Um canal pode ser definido como sendo apenas para leitura (`<-`) ou apenas para escrita (`<-`).
 
-Os valores gerados pelo gerador `sequencia_numeros` são enviados para o canal de entrada do pipeline e seu valor transformado recebido pelo canal de saída na função principal e é impresso.
+Os valores gerados pelo gerador `sequenciaNumeros` são enviados para o canal de entrada do pipeline e seu valor transformado recebido pelo canal de saída na função principal e é impresso.
 
 Vários pipelines poderiam ser encadeados para realizar múltiplas transformações.
 
@@ -109,7 +143,7 @@ func dobroFloat(entrada <-chan int) chan<- float64 {
 	return saida
 }
 
-func sequencia_numeros(inicial, final int) <-chan int {
+func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
@@ -122,7 +156,7 @@ func sequencia_numeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	for valor := range sequencia_numeros(1, 10) {
+	for valor := range sequenciaNumeros(1, 10) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
@@ -149,23 +183,23 @@ import (
 	"sync"
 )
 
-func fanin(canais_entrada ...<-chan int) <-chan int {
+func fanin(canaisEntrada ...<-chan int) <-chan int {
 	var wg sync.WaitGroup
 	// canal de saída que será compartilhado entre os canais de entrada
-	canal_saida := make(chan int)
+	canalSaida := make(chan int)
 
 	// lê os valores de cada canal de entrada e envia para o canal de saída
 	// quando todos os valores forem lidos, envia sinal avisando que terminou
 	output := func(c <-chan int) {
 		for n := range c {
-			canal_saida <- n
+			canalSaida <- n
 		}
 		// aviso que terminou de ler os valores de um canal
 		wg.Done()
 	}
-	wg.Add(len(canais_entrada))
+	wg.Add(len(canaisEntrada))
 	// Inicializa uma goroutine de saída para cada canal de entrada em canais_entrada.
-	for _, c := range canais_entrada {
+	for _, c := range canaisEntrada {
 		go output(c)
 	}
 
@@ -174,12 +208,12 @@ func fanin(canais_entrada ...<-chan int) <-chan int {
 	// isto deve ser feito após o wg.Add
 	go func() {
 		wg.Wait()
-		close(canal_saida)
+		close(canalSaida)
 	}()
-	return canal_saida
+	return canalSaida
 }
 
-func sequencia_numeros(inicial, final int) <-chan int {
+func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
@@ -193,9 +227,9 @@ func sequencia_numeros(inicial, final int) <-chan int {
 
 func main() {
 	canal := fanin(
-		sequencia_numeros(1, 10),
-		sequencia_numeros(11, 20),
-		sequencia_numeros(21, 30),
+		sequenciaNumeros(1, 10),
+		sequenciaNumeros(11, 20),
+		sequenciaNumeros(21, 30),
 	)
 	for valor := range canal {
 		fmt.Printf("valor: %v\n", valor)
@@ -206,7 +240,88 @@ func main() {
 
 ## 📣 Fan-out
 
-Em breve
+Um fan-out copia dados de um canal de entrada para múltiplos canais de saída.
+
+No exemplo uma sequência de números é gerada e enviada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
+
+Esta implementação de fan-out tenta garantir a entrega de todas as mensagens utilizando um agrupador (WaitGroup) para aguardar a publicação dos valores em todos os canais de saída. A publicação é feita em sua própria _goroutine_ e conta também com um mecanismo(_timer_) de forma a previnir o bloqueio caso algum canal de saída não consiga consumir a mensagem. As mensagens não consumidas são descartadas.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func publicar(canalSaida chan<- int, valor int, wg *sync.WaitGroup) {
+	timer := time.NewTimer(1 * time.Second)
+	// Aguarda 1 segundo ou o canal ser lido
+	select {
+	case canalSaida <- valor:
+	case <-timer.C:
+	}
+	// Independente do canal ser lido ou não,
+	// avisa que a publicação terminou
+	wg.Done()
+	timer.Stop()
+}
+
+func fanout(entrada <-chan int, saidas ...chan<- int) {
+
+	// O agrupamento das publicações é para evitar que
+	// o processamento fique bloquando enquanto um canal de saída não é lido
+	// e garante que todos os valores serão publicados
+	var wg sync.WaitGroup
+	for valor := range entrada {
+		wg.Add(len(saidas))
+		// Publica o valor de entrada em todas as saídas
+		for _, saida := range saidas {
+			go publicar(saida, valor, &wg)
+		}
+		wg.Wait()
+	}
+	// Como a entrada foi consumida, fecha os canais de saída
+	for _, canalSaida := range saidas {
+		close(canalSaida)
+	}
+}
+
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+func trabalhador(in <-chan int, id int, wg *sync.WaitGroup) {
+	for v := range in {
+		fmt.Println("id: ", id, " valor: ", v)
+	}
+	wg.Done()
+}
+
+func main() {
+	out1 := make(chan int)
+	out2 := make(chan int)
+	// Agrupamos os trabalhadores de forma
+	// a aguardar o processamento de todos antes do programa principal
+	// ser finalizado
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go trabalhador(out1, 1, &wg)
+	go trabalhador(out2, 2, &wg)
+	fanout(sequenciaNumeros(1, 10), out1, out2)
+	wg.Wait()
+}
+
+```
 
 ## 🪟 Janela deslizante
 

@@ -15,7 +15,7 @@ func dobroFloat(entrada <-chan int) chan<- float64 {
 	return saida
 }
 
-func sequencia_numeros(inicial, final int) <-chan int {
+func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
@@ -28,7 +28,7 @@ func sequencia_numeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	for valor := range sequencia_numeros(1, 10) {
+	for valor := range sequenciaNumeros(1, 10) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
