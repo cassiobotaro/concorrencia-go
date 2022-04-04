@@ -183,24 +183,24 @@ import (
 	"sync"
 )
 
-func fanin(canaisEntrada ...<-chan int) <-chan int {
+func fanin(entradas ...<-chan int) <-chan int {
 	var wg sync.WaitGroup
 	// canal de saída que será compartilhado entre os canais de entrada
-	canalSaida := make(chan int)
+	saida := make(chan int)
 
 	// lê os valores de cada canal de entrada e envia para o canal de saída
 	// quando todos os valores forem lidos, envia sinal avisando que terminou
-	output := func(c <-chan int) {
+	enviarSaida := func(c <-chan int) {
 		for n := range c {
-			canalSaida <- n
+			saida <- n
 		}
 		// aviso que terminou de ler os valores de um canal
 		wg.Done()
 	}
-	wg.Add(len(canaisEntrada))
+	wg.Add(len(entradas))
 	// Inicializa uma goroutine de saída para cada canal de entrada em canais_entrada.
-	for _, c := range canaisEntrada {
-		go output(c)
+	for _, c := range entradas {
+		go enviarSaida(c)
 	}
 
 	// Inicia uma goroutine para fechar o canal de saída quando todas as
@@ -208,9 +208,9 @@ func fanin(canaisEntrada ...<-chan int) <-chan int {
 	// isto deve ser feito após o wg.Add
 	go func() {
 		wg.Wait()
-		close(canalSaida)
+		close(saida)
 	}()
-	return canalSaida
+	return saida
 }
 
 func sequenciaNumeros(inicial, final int) <-chan int {
@@ -255,11 +255,11 @@ import (
 	"time"
 )
 
-func publicar(canalSaida chan<- int, valor int, wg *sync.WaitGroup) {
+func publicar(saida chan<- int, valor int, wg *sync.WaitGroup) {
 	timer := time.NewTimer(1 * time.Second)
 	// Aguarda 1 segundo ou o canal ser lido
 	select {
-	case canalSaida <- valor:
+	case saida <- valor:
 	case <-timer.C:
 	}
 	// Independente do canal ser lido ou não,
@@ -283,8 +283,8 @@ func fanout(entrada <-chan int, saidas ...chan<- int) {
 		wg.Wait()
 	}
 	// Como a entrada foi consumida, fecha os canais de saída
-	for _, canalSaida := range saidas {
-		close(canalSaida)
+	for _, saida := range saidas {
+		close(saida)
 	}
 }
 
@@ -308,16 +308,16 @@ func trabalhador(in <-chan int, id int, wg *sync.WaitGroup) {
 }
 
 func main() {
-	out1 := make(chan int)
-	out2 := make(chan int)
+	saida1 := make(chan int)
+	saida2 := make(chan int)
 	// Agrupamos os trabalhadores de forma
 	// a aguardar o processamento de todos antes do programa principal
 	// ser finalizado
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go trabalhador(out1, 1, &wg)
-	go trabalhador(out2, 2, &wg)
-	fanout(sequenciaNumeros(1, 10), out1, out2)
+	go trabalhador(saida1, 1, &wg)
+	go trabalhador(saida2, 2, &wg)
+	fanout(sequenciaNumeros(1, 10), saida1, saida2)
 	wg.Wait()
 }
 

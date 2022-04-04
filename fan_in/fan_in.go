@@ -5,24 +5,24 @@ import (
 	"sync"
 )
 
-func fanin(canaisEntrada ...<-chan int) <-chan int {
+func fanin(entradas ...<-chan int) <-chan int {
 	var wg sync.WaitGroup
 	// canal de saída que será compartilhado entre os canais de entrada
-	canalSaida := make(chan int)
+	saida := make(chan int)
 
 	// lê os valores de cada canal de entrada e envia para o canal de saída
 	// quando todos os valores forem lidos, envia sinal avisando que terminou
-	output := func(c <-chan int) {
+	enviarSaida := func(c <-chan int) {
 		for n := range c {
-			canalSaida <- n
+			saida <- n
 		}
 		// aviso que terminou de ler os valores de um canal
 		wg.Done()
 	}
-	wg.Add(len(canaisEntrada))
+	wg.Add(len(entradas))
 	// Inicializa uma goroutine de saída para cada canal de entrada em canais_entrada.
-	for _, c := range canaisEntrada {
-		go output(c)
+	for _, c := range entradas {
+		go enviarSaida(c)
 	}
 
 	// Inicia uma goroutine para fechar o canal de saída quando todas as
@@ -30,9 +30,9 @@ func fanin(canaisEntrada ...<-chan int) <-chan int {
 	// isto deve ser feito após o wg.Add
 	go func() {
 		wg.Wait()
-		close(canalSaida)
+		close(saida)
 	}()
-	return canalSaida
+	return saida
 }
 
 func sequenciaNumeros(inicial, final int) <-chan int {
