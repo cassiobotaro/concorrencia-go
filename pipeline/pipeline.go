@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-func dobroFloat(entrada <-chan int) chan<- float64 {
+func dobroFloat(entrada <-chan int) <-chan float64 {
 	saida := make(chan float64)
 	go func() {
 		for valor := range entrada {
@@ -28,7 +28,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	for valor := range sequenciaNumeros(1, 10) {
+	for valor := range dobroFloat(sequenciaNumeros(1, 10)) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
