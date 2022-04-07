@@ -410,7 +410,7 @@ func main() {
 
 ## 🧑‍🤝‍🧑 Processamento em lote (batch processing)
 
-Um batch é usado quando uma goroutine gera itens um-por-um mas o consumidor deseja processar os items em blocos. Normalmente um canal de conclusão é usado para notificar o escritor que o item foi processado. Um canal de flush pode user usado para forçar que o buffer seja enviado antes que ele esteja cheio.
+Um processamento em lote (batch processing) é usado quando uma _goroutine_ gera itens um-por-um mas o consumidor deseja processar os items em blocos. Normalmente um canal de conclusão é usado para notificar o escritor que o item foi processado. Um canal de descarga (flush) pode user usado para forçar que o buffer seja enviado antes que ele esteja cheio.
 
 Exemplo: Ao invés de salvar cada item no banco de dados assim que ele é recebido, é possível utilizar um buffer de 100 itens ou 100ms e salvar os itens em uma única requisição.
 
@@ -517,7 +517,67 @@ func main() {
 
 ## 🎫 Sistema de ticket
 
-Em breve
+Um sistema de ticket é usado para controlar quando um determinado trabalho pode ser executado, normalmente é utilizado para limitar o uso de um recurso sobre um período de tempo.
+
+Exemplo: Uma API pode ser acionada apenas 15 vezes em um perído de 15 minutos. A utilização é medida em blocos de 15 minutos.
+
+No exemplo, a bilheteria é um sistema de ticket que garante que apenas 15 "tickets" sejam processados a cada segundo.
+
+Enviamos através de um canal 30 processamentos a serem feitos, mas o sistema de ticket garante que apenas 15 processamentos sejam executados por segundo.
+
+Como pode ser visto, o trabalhador fica bloqueado, até que um ticket seja enviado através do canal.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+type (
+	Trabalho func()
+	ticket   int
+)
+
+func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
+	for w := range work {
+		<-tickets // espera por um ticket
+		w()       // executa um trabalho
+	}
+}
+
+func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
+	for {
+		for i := 0; i < nTickets; i++ {
+			tickets <- ticket(i)
+		}
+
+		// espera até que mais tickets possam ser emitidos
+		<-time.After(timeout)
+	}
+}
+
+func main() {
+	tickets := make(chan ticket)
+	trabalhos := make(chan Trabalho)
+
+	go bilheteria(tickets, 1*time.Second, 10)
+	go trabalhador(tickets, trabalhos)
+
+	for i := 0; i <= 30; i++ {
+
+		trabalhos <- func() {
+			fmt.Println("processando ticket")
+		}
+		fmt.Println("trabalho ", i, " enviado")
+	}
+
+	close(trabalhos)
+	close(tickets)
+}
+
+```
 
 ## 👨‍💻 Run On My goroutine
 
