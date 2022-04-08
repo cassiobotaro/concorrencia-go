@@ -4,7 +4,7 @@ Go é fundamentada no modelo CSP (Communicating sequential processes) proposto p
 
 As explicações e exemplos são altamente inspiradas na [apresentação](https://github.com/andrebq/andrebq.github.io) do @andrebq.
 
-Uma outra influência é a [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelmaneto em go.
+Uma outra influência é a [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em go.
 
 ## 🔗 Canais
 
@@ -14,7 +14,7 @@ Um canal é um ponto de sincronização entre _goroutines_. Uma _goroutine_ vai 
 
 Ler de um canal é semelhante, uma _goroutine_ vai ficar bloqueada lendo até que um valor seja enviado para o canal ou o canal seja fechado (quando isso ocorre, o valor zero do tipo é retornado).
 
-Um canal pode ser fechado. Isso é útil para indicar que nenhum outro valor seré escrito no canal.
+Um canal pode ser fechado. Isso é útil para indicar que nenhum outro valor será escrito no canal.
 
 Ler um canal fechado retorna um valor zero do tipo do canal.
 
@@ -113,13 +113,17 @@ func main() {
 
 ```
 
-## 👷 Pipeline
+## 👷‍♂️👷‍♀️ Trabalhadores (pool of workers)
+
+Em breve
+
+## 🧑‍🏭 Pipeline
 
 Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal, normalmente após realizar alguma tranformação no valor.
 
 No exemplo temos a função `dobroFloat` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
 
-Um canal pode ser definido como sendo apenas para leitura (`<-`) ou apenas para escrita (`<-`).
+Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`).
 
 Os valores gerados pelo gerador `sequenciaNumeros` são enviados para o canal de entrada do pipeline e seu valor transformado recebido pelo canal de saída na função principal e é impresso.
 
