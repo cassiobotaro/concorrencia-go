@@ -583,14 +583,6 @@ func main() {
 
 ```
 
-## 👨‍💻 Run On My goroutine
-
-Em breve
-
-## 🥸 Modelo de atores
-
-Em breve
-
 ## 📰 Contextos
 
 Em breve
