@@ -6,6 +6,8 @@ As explicações e exemplos são altamente inspiradas na [apresentação](https:
 
 Uma outra influência é a [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em go.
 
+Aqui serão apresentados alguns padrões de concorrência, porem sugiro também a leitura sobre [context](https://gobyexample.com/context), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrencia.
+
 ## 🔗 Canais
 
 Canais (channels) são uma estrutura primitiva na linguagem, e você pode utilizá-los para envio e recebimento de valores entre rotinas (_goroutines_). Os valores podem ser de qualquer tipo, inclusive do tipo canal.
