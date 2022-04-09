@@ -2,8 +2,8 @@ package main
 
 import "fmt"
 
-func trabalhador(canal_entrada <-chan int) {
-	for valor := range canal_entrada {
+func trabalhador(entrada <-chan int) {
+	for valor := range entrada {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
