@@ -2,11 +2,11 @@ package main
 
 import "fmt"
 
-func dobroFloat(entrada <-chan int) <-chan float64 {
-	saida := make(chan float64)
+func dobro(entrada <-chan int) <-chan int {
+	saida := make(chan int)
 	go func() {
 		for valor := range entrada {
-			saida <- float64(valor) * 2
+			saida <- valor * 2
 		}
 		// Após ter terminado de transformar os valores de entrada,
 		//  fecha o canal de saida
@@ -28,7 +28,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	for valor := range dobroFloat(sequenciaNumeros(1, 10)) {
+	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }

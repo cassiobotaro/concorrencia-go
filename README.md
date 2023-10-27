@@ -184,7 +184,7 @@ func main() {
 
 Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal, normalmente após realizar alguma tranformação no valor.
 
-No exemplo temos a função `dobroFloat` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
+No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
 
 Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`).
 
@@ -197,11 +197,11 @@ package main
 
 import "fmt"
 
-func dobroFloat(entrada <-chan int) <-chan float64 {
-	saida := make(chan float64)
+func dobro(entrada <-chan int) <-chan int {
+	saida := make(chan int)
 	go func() {
 		for valor := range entrada {
-			saida <- float64(valor) * 2
+			saida <- valor * 2
 		}
 		// Após ter terminado de transformar os valores de entrada,
 		//  fecha o canal de saida
@@ -223,7 +223,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 }
 
 func main() {
-	for valor := range dobroFloat(sequenciaNumeros(1, 10)) {
+	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
@@ -397,7 +397,6 @@ Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor 
 No exemplo uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo a medida que a janela desliza os valores antigos são descartados.
 
 Para fazer a janela deslizante, utilizamos um buffer, que possui um tamanho fixo. Utilizamos uma técnica de seleção (select) onde caso o canal de saída seja lido, enviamos o valor para o consumidor e o removemos do buffer. Caso o canal de entrada seja lido, o valor é adicionado ao buffer.
-
 
 ```go
 package main
