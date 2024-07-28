@@ -116,41 +116,50 @@ func main() {
 
 ## 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
 
-Uma coleção de _goroutines_ que ficam esperando tarefas serem atribuídas a elas. Quando a _goroutine_ finaliza a tarefa que foi atribuída, se torna disponível novamente para execução de uma nova tarefa.
+A piscina de marmotinhas (carinhosamente chamado pela minha esposa), é uma coleção de _goroutines_ que ficam esperando tarefas serem atribuídas a elas. Quando a _goroutine_ finaliza a tarefa que foi atribuída, se torna disponível novamente para execução de uma nova tarefa.
 
 No exemplo, um grupo de n trabalhadores aguardam a chegada de valores pelo canal de entrada. Cada trabalhador executa seu processmento e envia o resultado por um canal.
 
-O tipo sync.WaitGroup fornece uma maneira simples de organizar o grupo de trabalhadores.
+Um canal de sinalização é utilizado para indicar que todos os trabalhadores terminaram.
 
 ```go
 package main
 
 import (
 	"fmt"
-	"sync"
 )
 
-func trabalhador(id int, entrada <-chan int, saida chan<- int, grupo *sync.WaitGroup) {
+// trabalhador processa valores recebidos do canal de entrada e envia resultados para o canal de saída.
+// Ele utiliza um canal de sinalização para notificar quando terminar.
+func trabalhador(id int, entrada <-chan int, saida chan<- int, terminar chan struct{}) {
 	for valor := range entrada {
 		fmt.Printf("id: %d processou valor: %v\n", id, valor)
 		saida <- valor * 2
 	}
-	grupo.Done()
+
+	// Envia uma mensagem para o canal de sinalização ao terminar
+	fmt.Printf("id: %d terminou\n", id)
+	terminar <- struct{}{}
 }
 
 func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
 	saida := make(chan int)
-	var wg sync.WaitGroup
+	terminar := make(chan struct{}, nTrabalhadores)
+
+	// Cria e inicia os trabalhadores
 	for i := 0; i < nTrabalhadores; i++ {
-		go trabalhador(i+1, entrada, saida, &wg)
+		go trabalhador(i+1, entrada, saida, terminar)
 	}
-	wg.Add(nTrabalhadores)
+
+	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
 	go func() {
-		// Quando todos os trabalhadores estiverem terminado
-		// informa que o grupo não vai mais enviar resultados
-		wg.Wait()
+		// Espera receber sinais de todos os trabalhadores
+		for i := 0; i < nTrabalhadores; i++ {
+			<-terminar
+		}
 		close(saida)
 	}()
+
 	return saida
 }
 
@@ -160,7 +169,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 		for i := inicial; i <= final; i++ {
 			saida <- i
 		}
-		// após gerar todos os valores, fecha o canal
+		// Após gerar todos os valores, fecha o canal
 		close(saida)
 	}()
 	return saida
@@ -172,7 +181,7 @@ func main() {
 	// Um grupo de trabalhadores irá processar esses números
 	saida := grupoDeTrabalhadores(entrada, 2)
 
-	// somente termina quando todo o trabalho for processado
+	// Somente termina quando todo o trabalho for processado
 	for s := range saida {
 		fmt.Println(s)
 	}
@@ -238,7 +247,7 @@ A função fan-in pode receber vários canais entrada através de [parâmetros m
 
 No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
 
-Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. O tipo sync.WaitGroup fornece uma maneira simples de organizar essa sincronização.
+Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizzamos um canal de sinalização para indicar que todos os canais de entrada foram processados.
 
 Repare que temos uma _goroutine_ que aguarda um sinal indicando que todas as todas entradas foram consumidas (wg.Wait), finalizando assim o canal de saída.
 
@@ -247,57 +256,62 @@ package main
 
 import (
 	"fmt"
-	"sync"
 )
 
+// fanin combina vários canais de entrada em um único canal de saída.
+// Utiliza um canal de sinalização para saber quando todos os canais de entrada foram processados.
 func fanin(entradas ...<-chan int) <-chan int {
-	var wg sync.WaitGroup
-	// canal de saída que será compartilhado entre os canais de entrada
 	saida := make(chan int)
 
-	// lê os valores de cada canal de entrada e envia para o canal de saída
-	// quando todos os valores forem lidos, envia sinal avisando que terminou
-	enviarSaida := func(c <-chan int) {
-		for n := range c {
-			saida <- n
-		}
-		// aviso que terminou de ler os valores de um canal
-		wg.Done()
-	}
-	wg.Add(len(entradas))
-	// Inicializa uma goroutine de saída para cada canal de entrada em canais_entrada.
-	for _, c := range entradas {
-		go enviarSaida(c)
-	}
-
-	// Inicia uma goroutine para fechar o canal de saída quando todas as
-	// goroutines de entrada terminarem.
-	// isto deve ser feito após o wg.Add
 	go func() {
-		wg.Wait()
-		close(saida)
+		// Número de canais de entrada
+		n := len(entradas)
+		// Canal de controle para quando todos os canais de entrada terminarem
+		canalTermino := make(chan struct{}, n)
+
+		for _, c := range entradas {
+			go func(c <-chan int) {
+				for n := range c {
+					saida <- n
+				}
+				// Notifica que este canal foi processado
+				canalTermino <- struct{}{}
+			}(c)
+		}
+
+		// Quando todos os canais de entrada terminarem, fecha o canal de saída
+		go func() {
+			for i := 0; i < n; i++ {
+				<-canalTermino
+			}
+			close(saida)
+		}()
 	}()
+
 	return saida
 }
 
+// sequenciaNumeros cria um canal que envia uma sequência de números de inicial a final.
 func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
 		}
-		// após gerar todos os valores, fecha o canal
 		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	// Combina três canais de sequência em um único canal
 	canal := fanin(
 		sequenciaNumeros(1, 10),
 		sequenciaNumeros(11, 20),
 		sequenciaNumeros(21, 30),
 	)
+
+	// Lê e imprime os valores do canal combinado
 	for valor := range canal {
 		fmt.Printf("valor: %v\n", valor)
 	}
@@ -317,37 +331,40 @@ Esta implementação de fan-out tenta garantir a entrega de todas as mensagens u
 package main
 
 import (
+	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
-func publicar(saida chan<- int, valor int, wg *sync.WaitGroup) {
-	timer := time.NewTimer(1 * time.Second)
-	// Aguarda 1 segundo ou o canal ser lido
+// publicar tenta enviar um valor para o canal `saida` e utiliza um contexto com timeout
+// para garantir que a operação não dure mais do que o tempo especificado.
+func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- struct{}) {
+	// Cria um contexto com timeout de 1 segundo
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
 	select {
+	case <-ctx.Done():
+		// Se o contexto expirar antes do envio, não faz nada
 	case saida <- valor:
-	case <-timer.C:
+		// Se o valor for enviado com sucesso antes do timeout
 	}
-	// Independente do canal ser lido ou não,
-	// avisa que a publicação terminou
-	wg.Done()
-	timer.Stop()
+	controle <- struct{}{}
 }
 
 func fanout(entrada <-chan int, saidas ...chan<- int) {
+	// Canal para controlar o término das publicações
+	controle := make(chan struct{}, len(saidas)*2) // capacidade para controle de todas as publicações
 
-	// O agrupamento das publicações é para evitar que
-	// o processamento fique bloquando enquanto um canal de saída não é lido
-	// e garante que todos os valores serão publicados
-	var wg sync.WaitGroup
 	for valor := range entrada {
-		wg.Add(len(saidas))
 		// Publica o valor de entrada em todas as saídas
 		for _, saida := range saidas {
-			go publicar(saida, valor, &wg)
+			go publicar(context.Background(), saida, valor, controle)
 		}
-		wg.Wait()
+		// Aguarda o término de todas as publicações
+		for i := 0; i < len(saidas); i++ {
+			<-controle
+		}
 	}
 	// Como a entrada foi consumida, fecha os canais de saída
 	for _, saida := range saidas {
@@ -367,25 +384,31 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func trabalhador(in <-chan int, id int, wg *sync.WaitGroup) {
+func trabalhador(in <-chan int, id int, controle chan<- struct{}) {
 	for v := range in {
 		fmt.Println("id: ", id, " valor: ", v)
 	}
-	wg.Done()
+	controle <- struct{}{}
 }
 
 func main() {
 	saida1 := make(chan int)
 	saida2 := make(chan int)
-	// Agrupamos os trabalhadores de forma
-	// a aguardar o processamento de todos antes do programa principal
-	// ser finalizado
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go trabalhador(saida1, 1, &wg)
-	go trabalhador(saida2, 2, &wg)
+
+	// Canal para aguardar o término dos trabalhadores
+	controle := make(chan struct{}, 2)
+
+	// Inicia trabalhadores
+	go trabalhador(saida1, 1, controle)
+	go trabalhador(saida2, 2, controle)
+
+	// Distribui a sequência de números para os canais de saída
 	fanout(sequenciaNumeros(1, 10), saida1, saida2)
-	wg.Wait()
+
+	// Aguarda o término dos trabalhadores
+	for i := 0; i < 2; i++ {
+		<-controle
+	}
 }
 
 ```

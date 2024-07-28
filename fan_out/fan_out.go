@@ -1,37 +1,40 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
-func publicar(saida chan<- int, valor int, wg *sync.WaitGroup) {
-	timer := time.NewTimer(1 * time.Second)
-	// Aguarda 1 segundo ou o canal ser lido
+// publicar tenta enviar um valor para o canal `saida` e utiliza um contexto com timeout
+// para garantir que a operação não dure mais do que o tempo especificado.
+func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- struct{}) {
+	// Cria um contexto com timeout de 1 segundo
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
 	select {
+	case <-ctx.Done():
+		// Se o contexto expirar antes do envio, não faz nada
 	case saida <- valor:
-	case <-timer.C:
+		// Se o valor for enviado com sucesso antes do timeout
 	}
-	// Independente do canal ser lido ou não,
-	// avisa que a publicação terminou
-	wg.Done()
-	timer.Stop()
+	controle <- struct{}{}
 }
 
 func fanout(entrada <-chan int, saidas ...chan<- int) {
+	// Canal para controlar o término das publicações
+	controle := make(chan struct{}, len(saidas)*2) // capacidade para controle de todas as publicações
 
-	// O agrupamento das publicações é para evitar que
-	// o processamento fique bloquando enquanto um canal de saída não é lido
-	// e garante que todos os valores serão publicados
-	var wg sync.WaitGroup
 	for valor := range entrada {
-		wg.Add(len(saidas))
 		// Publica o valor de entrada em todas as saídas
 		for _, saida := range saidas {
-			go publicar(saida, valor, &wg)
+			go publicar(context.Background(), saida, valor, controle)
 		}
-		wg.Wait()
+		// Aguarda o término de todas as publicações
+		for i := 0; i < len(saidas); i++ {
+			<-controle
+		}
 	}
 	// Como a entrada foi consumida, fecha os canais de saída
 	for _, saida := range saidas {
@@ -51,23 +54,29 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func trabalhador(in <-chan int, id int, wg *sync.WaitGroup) {
+func trabalhador(in <-chan int, id int, controle chan<- struct{}) {
 	for v := range in {
 		fmt.Println("id: ", id, " valor: ", v)
 	}
-	wg.Done()
+	controle <- struct{}{}
 }
 
 func main() {
 	saida1 := make(chan int)
 	saida2 := make(chan int)
-	// Agrupamos os trabalhadores de forma
-	// a aguardar o processamento de todos antes do programa principal
-	// ser finalizado
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go trabalhador(saida1, 1, &wg)
-	go trabalhador(saida2, 2, &wg)
+
+	// Canal para aguardar o término dos trabalhadores
+	controle := make(chan struct{}, 2)
+
+	// Inicia trabalhadores
+	go trabalhador(saida1, 1, controle)
+	go trabalhador(saida2, 2, controle)
+
+	// Distribui a sequência de números para os canais de saída
 	fanout(sequenciaNumeros(1, 10), saida1, saida2)
-	wg.Wait()
+
+	// Aguarda o término dos trabalhadores
+	for i := 0; i < 2; i++ {
+		<-controle
+	}
 }
