@@ -1,67 +1,53 @@
 package main
 
 import (
-	"container/list"
 	"fmt"
 	"time"
 )
 
 func janelaDeslizante(saida chan<- interface{}, entrada <-chan interface{}, tamanho int) {
-	buffer := list.New()
+	buffer := make(chan interface{}, tamanho)
 	defer close(saida)
-	for entrada != nil || buffer.Len() > 0 {
-		if buffer.Len() == 0 {
-			// nós temos um buffer vazio
-			// e um canal de entrada válido
-			val := <-entrada
-			if val == nil { // assume que nil significa fechado
-				entrada = nil // não vai mais ler dados
-				continue
+
+	// Lógica de leitura do produtor
+	go func() {
+		defer close(buffer)
+		for val := range entrada {
+			// Se o buffer estiver cheio, descarta o mais antigo
+			if len(buffer) == tamanho {
+				<-buffer
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou valor antigo para adicionar %v.\n", val)
 			}
-			buffer.PushBack(val)
-			continue
+			buffer <- val
 		}
-		select {
-		case saida <- buffer.Front().Value:
-			// consumidor lê o dado
-			buffer.Remove(buffer.Front()) // remove first item
-		case val := <-entrada:
-			// recebeu nova entrada
-			if val == nil {
-				// invalida entrada
-				entrada = nil
-				// continua já que podemos ter dados
-				// no buffer
-				continue
-			}
-			if buffer.Len() == tamanho {
-				// buffer cheio, descarta dados antigos
-				buffer.Remove(buffer.Front())
-			}
-			// adiciona novo dado no buffer
-			buffer.PushBack(val)
-		}
+	}()
+
+	// Lógica de envio para o consumidor
+	for val := range buffer {
+		saida <- val
+		fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", val)
 	}
 }
 
-func leitorLento(in <-chan interface{}) {
-	for val := range in {
-		fmt.Printf("valor: %v\n", val)
-		time.Sleep(4 * time.Second)
-	}
-}
-
+// O resto do código permanece o mesmo.
 func sequenciaNumeros(inicial, final int) <-chan interface{} {
 	saida := make(chan interface{})
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
+			fmt.Printf("Produtor: Enviou %d\n", i)
 			time.Sleep(1 * time.Second)
 		}
-		// após gerar todos os valores, fecha o canal
 		close(saida)
 	}()
 	return saida
+}
+
+func leitorLento(in <-chan interface{}) {
+	for val := range in {
+		fmt.Printf("Consumidor: Recebeu %v\n", val)
+		time.Sleep(4 * time.Second)
+	}
 }
 
 func main() {
@@ -69,4 +55,5 @@ func main() {
 	saida := make(chan interface{})
 	go leitorLento(saida)
 	janelaDeslizante(saida, valores, 3)
+	fmt.Println("Fim da execução.")
 }
