@@ -485,7 +485,7 @@ func main() {
 
 ## 🧑‍🤝‍🧑 Processamento em lote (batch processing)
 
-Um processamento em lote (batch processing) é usado quando uma _goroutine_ gera itens um por um, mas o consumidor deseja processar os itens em blocos. Normalmente, um canal de conclusão é usado para notificar o escritor que o item foi processado. Um canal de descarga (flush) pode ser usado para forçar que o buffer seja enviado antes que ele esteja cheio.
+Um processamento em lote (batch processing) é usado quando uma _goroutine_ gera itens um por um, mas o consumidor deseja processar os itens em blocos. Normalmente, um canal de conclusão é usado para notificar o escritor que o item foi processado. Um canal de descarga pode ser usado para forçar que o buffer seja enviado antes que ele esteja cheio.
 
 Exemplo: Ao invés de salvar cada item no banco de dados assim que ele é recebido, é possível utilizar um buffer de 100 itens ou 100ms e salvar os itens em uma única requisição.
 
@@ -524,37 +524,37 @@ func processadorLotes(entrada <-chan []req) chan bool {
 func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) chan []req {
 	saida := make(chan []req)
 	go func() {
+		defer close(saida)
 		buf := make([]req, 0, tamanhoLote)
-		valorZero := req{}
-		var fechado bool
-		// enquanto houver itens para processar
-		for !fechado {
-			var deveDescarregar bool
 
+		for {
 			select {
-			case r := <-entrada:
-				if r == valorZero {
-					// close on zero value
-					fechado = true
-					continue
+			// enquanto houver itens para processar
+			case r, ok := <-entrada:
+				if !ok {
+					// envia o que tiver no buffer antes de sair
+					if len(buf) > 0 {
+						saida <- buf
+					}
+					// para o loop quando o canal de entrada for fechado
+					return
 				}
 				// Adiciona o item no buffer
 				buf = append(buf, r)
-				deveDescarregar = len(buf) == tamanhoLote
+				// se o buffer estiver cheio, descarrega
+				if len(buf) == tamanhoLote {
+					saida <- buf
+					buf = make([]req, 0, tamanhoLote)
+				}
+
+			// Se receber um sinal de descarga, descarrega o que tiver no buffer
 			case <-descarga:
-				deveDescarregar = true
-			}
-			if deveDescarregar {
-				saida <- buf
-				buf = make([]req, 0, tamanhoLote)
+				if len(buf) > 0 {
+					saida <- buf
+					buf = make([]req, 0, tamanhoLote)
+				}
 			}
 		}
-		// garante que caso a entrada seja fechada sem preencher o buffer
-		// os ultimos itens sejam enviados para processamento
-		if len(buf) > 0 {
-			saida <- buf
-		}
-		close(saida)
 	}()
 	return saida
 }
@@ -562,10 +562,11 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 func main() {
 	entrada := make(chan req)
 	descarga := make(chan struct{})
+
 	// inicia de forma concorrente o processamento em lotes
 	saida := processamentoLotes(entrada, descarga, 3)
-	// O consumidor de lotes será iniciado de forma concorrente
 	pronto := processadorLotes(saida)
+
 	entrada <- req{valor: 1}
 	entrada <- req{valor: 2}
 	entrada <- req{valor: 3}
@@ -583,11 +584,12 @@ func main() {
 	// Eles serão processados mesmo assim.
 
 	close(entrada)
+
 	// Aguarda todo o processamento do processador de lotes
 	// antes de encerrar o programa
 	<-pronto
+	fmt.Println("Fim do programa.")
 }
-
 ```
 
 ## 🎫 Sistema de ticket
