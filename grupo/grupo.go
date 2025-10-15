@@ -22,14 +22,14 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
 	terminar := make(chan struct{}, nTrabalhadores)
 
 	// Cria e inicia os trabalhadores
-	for i := 0; i < nTrabalhadores; i++ {
+	for i := range nTrabalhadores {
 		go trabalhador(i+1, entrada, saida, terminar)
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
 	go func() {
 		// Espera receber sinais de todos os trabalhadores
-		for i := 0; i < nTrabalhadores; i++ {
+		for range nTrabalhadores {
 			<-terminar
 		}
 		close(saida)

@@ -19,7 +19,7 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 
 func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
 	for {
-		for i := 0; i < nTickets; i++ {
+		for i := range nTickets {
 			tickets <- ticket(i)
 		}
 
@@ -31,12 +31,15 @@ func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
 func main() {
 	tickets := make(chan ticket)
 	trabalhos := make(chan Trabalho)
+	pronto := make(chan struct{})
 
 	go bilheteria(tickets, 1*time.Second, 10)
-	go trabalhador(tickets, trabalhos)
+	go func() {
+		trabalhador(tickets, trabalhos)
+		pronto <- struct{}{}
+	}()
 
 	for i := 0; i <= 30; i++ {
-
 		trabalhos <- func() {
 			fmt.Println("processando ticket")
 		}
@@ -44,5 +47,5 @@ func main() {
 	}
 
 	close(trabalhos)
-	close(tickets)
+	<-pronto
 }

@@ -10,12 +10,18 @@ func trabalhador(entrada <-chan int) {
 
 func main() {
 	entrada := make(chan int)
+	pronto := make(chan struct{})
 	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
-	go trabalhador(entrada)
-	for i := 0; i < 10; i++ {
+	go func() {
+		trabalhador(entrada)
+		pronto <- struct{}{}
+	}()
+	for i := range 10 {
 		entrada <- i
 	}
 	// Após ter enviado todos os valores, fecha o canal de entrada
 	// avisando ao trabalhador que o trabalho terminou
 	close(entrada)
+	// Aguarda o trabalhador terminar
+	<-pronto
 }

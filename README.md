@@ -78,7 +78,6 @@ func main() {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
-
 ```
 
 ## 🚧 Trabalhador (worker)
@@ -102,16 +101,21 @@ func trabalhador(entrada <-chan int) {
 
 func main() {
 	entrada := make(chan int)
+	pronto := make(chan struct{})
 	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
-	go trabalhador(entrada)
-	for i := 0; i < 10; i++ {
+	go func() {
+		trabalhador(entrada)
+		pronto <- struct{}{}
+	}()
+	for i := range 10 {
 		entrada <- i
 	}
 	// Após ter enviado todos os valores, fecha o canal de entrada
 	// avisando ao trabalhador que o trabalho terminou
 	close(entrada)
+	// Aguarda o trabalhador terminar
+	<-pronto
 }
-
 ```
 
 ## 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
@@ -147,14 +151,14 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
 	terminar := make(chan struct{}, nTrabalhadores)
 
 	// Cria e inicia os trabalhadores
-	for i := 0; i < nTrabalhadores; i++ {
+	for i := range nTrabalhadores {
 		go trabalhador(i+1, entrada, saida, terminar)
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
 	go func() {
 		// Espera receber sinais de todos os trabalhadores
-		for i := 0; i < nTrabalhadores; i++ {
+		for range nTrabalhadores {
 			<-terminar
 		}
 		close(saida)
@@ -186,7 +190,6 @@ func main() {
 		fmt.Println(s)
 	}
 }
-
 ```
 
 ## 🧑‍🏭 Pipeline
@@ -236,7 +239,6 @@ func main() {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
-
 ```
 
 ## ⚗️ Fan-in
@@ -262,30 +264,27 @@ import (
 // Utiliza um canal de sinalização para saber quando todos os canais de entrada foram processados.
 func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
+	// Número de canais de entrada
+	n := len(entradas)
+	// Canal de controle para quando todos os canais de entrada terminarem
+	canalTermino := make(chan struct{}, n)
 
-	go func() {
-		// Número de canais de entrada
-		n := len(entradas)
-		// Canal de controle para quando todos os canais de entrada terminarem
-		canalTermino := make(chan struct{}, n)
-
-		for _, c := range entradas {
-			go func(c <-chan int) {
-				for n := range c {
-					saida <- n
-				}
-				// Notifica que este canal foi processado
-				canalTermino <- struct{}{}
-			}(c)
-		}
-
-		// Quando todos os canais de entrada terminarem, fecha o canal de saída
-		go func() {
-			for i := 0; i < n; i++ {
-				<-canalTermino
+	for _, c := range entradas {
+		go func(c <-chan int) {
+			for n := range c {
+				saida <- n
 			}
-			close(saida)
-		}()
+			// Notifica que este canal foi processado
+			canalTermino <- struct{}{}
+		}(c)
+	}
+
+	// Quando todos os canais de entrada terminarem, fecha o canal de saída
+	go func() {
+		for range n {
+			<-canalTermino
+		}
+		close(saida)
 	}()
 
 	return saida
@@ -316,7 +315,6 @@ func main() {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
-
 ```
 
 ## 📣 Fan-out
@@ -362,7 +360,7 @@ func fanout(entrada <-chan int, saidas ...chan<- int) {
 			go publicar(context.Background(), saida, valor, controle)
 		}
 		// Aguarda o término de todas as publicações
-		for i := 0; i < len(saidas); i++ {
+		for range saidas {
 			<-controle
 		}
 	}
@@ -406,11 +404,10 @@ func main() {
 	fanout(sequenciaNumeros(1, 10), saida1, saida2)
 
 	// Aguarda o término dos trabalhadores
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		<-controle
 	}
 }
-
 ```
 
 ## 🪟 Janela deslizante
@@ -429,20 +426,24 @@ import (
 	"time"
 )
 
-func janelaDeslizante(saida chan<- interface{}, entrada <-chan interface{}, tamanho int) {
-	buffer := make(chan interface{}, tamanho)
+func janelaDeslizante(saida chan<- any, entrada <-chan any, tamanho int) {
+	buffer := make(chan any, tamanho)
 	defer close(saida)
 
 	// Lógica de leitura do produtor
 	go func() {
 		defer close(buffer)
 		for val := range entrada {
-			// Se o buffer estiver cheio, descarta o mais antigo
-			if len(buffer) == tamanho {
+			// Tenta enviar para o buffer
+			select {
+			case buffer <- val:
+				// Enviou com sucesso
+			default:
+				// Buffer cheio, descarta o mais antigo e adiciona o novo
 				<-buffer
 				fmt.Printf("Janela Deslizante: Buffer cheio, descartou valor antigo para adicionar %v.\n", val)
+				buffer <- val
 			}
-			buffer <- val
 		}
 	}()
 
@@ -454,8 +455,8 @@ func janelaDeslizante(saida chan<- interface{}, entrada <-chan interface{}, tama
 }
 
 // O resto do código permanece o mesmo.
-func sequenciaNumeros(inicial, final int) <-chan interface{} {
-	saida := make(chan interface{})
+func sequenciaNumeros(inicial, final int) <-chan any {
+	saida := make(chan any)
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
@@ -467,7 +468,7 @@ func sequenciaNumeros(inicial, final int) <-chan interface{} {
 	return saida
 }
 
-func leitorLento(in <-chan interface{}) {
+func leitorLento(in <-chan any) {
 	for val := range in {
 		fmt.Printf("Consumidor: Recebeu %v\n", val)
 		time.Sleep(4 * time.Second)
@@ -476,7 +477,7 @@ func leitorLento(in <-chan interface{}) {
 
 func main() {
 	valores := sequenciaNumeros(1, 10)
-	saida := make(chan interface{})
+	saida := make(chan any)
 	go leitorLento(saida)
 	janelaDeslizante(saida, valores, 3)
 	fmt.Println("Fim da execução.")
@@ -565,6 +566,7 @@ func main() {
 
 	// inicia de forma concorrente o processamento em lotes
 	saida := processamentoLotes(entrada, descarga, 3)
+	// O consumidor de lotes será iniciado de forma concorrente
 	pronto := processadorLotes(saida)
 
 	entrada <- req{valor: 1}
@@ -588,7 +590,6 @@ func main() {
 	// Aguarda todo o processamento do processador de lotes
 	// antes de encerrar o programa
 	<-pronto
-	fmt.Println("Fim do programa.")
 }
 ```
 
@@ -626,7 +627,7 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 
 func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
 	for {
-		for i := 0; i < nTickets; i++ {
+		for i := range nTickets {
 			tickets <- ticket(i)
 		}
 
@@ -638,12 +639,15 @@ func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
 func main() {
 	tickets := make(chan ticket)
 	trabalhos := make(chan Trabalho)
+	pronto := make(chan struct{})
 
 	go bilheteria(tickets, 1*time.Second, 10)
-	go trabalhador(tickets, trabalhos)
+	go func() {
+		trabalhador(tickets, trabalhos)
+		pronto <- struct{}{}
+	}()
 
 	for i := 0; i <= 30; i++ {
-
 		trabalhos <- func() {
 			fmt.Println("processando ticket")
 		}
@@ -651,7 +655,6 @@ func main() {
 	}
 
 	close(trabalhos)
-	close(tickets)
+	<-pronto
 }
-
 ```

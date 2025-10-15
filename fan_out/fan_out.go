@@ -32,7 +32,7 @@ func fanout(entrada <-chan int, saidas ...chan<- int) {
 			go publicar(context.Background(), saida, valor, controle)
 		}
 		// Aguarda o término de todas as publicações
-		for i := 0; i < len(saidas); i++ {
+		for range saidas {
 			<-controle
 		}
 	}
@@ -76,7 +76,7 @@ func main() {
 	fanout(sequenciaNumeros(1, 10), saida1, saida2)
 
 	// Aguarda o término dos trabalhadores
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		<-controle
 	}
 }

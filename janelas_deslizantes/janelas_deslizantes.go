@@ -5,20 +5,24 @@ import (
 	"time"
 )
 
-func janelaDeslizante(saida chan<- interface{}, entrada <-chan interface{}, tamanho int) {
-	buffer := make(chan interface{}, tamanho)
+func janelaDeslizante(saida chan<- any, entrada <-chan any, tamanho int) {
+	buffer := make(chan any, tamanho)
 	defer close(saida)
 
 	// Lógica de leitura do produtor
 	go func() {
 		defer close(buffer)
 		for val := range entrada {
-			// Se o buffer estiver cheio, descarta o mais antigo
-			if len(buffer) == tamanho {
+			// Tenta enviar para o buffer
+			select {
+			case buffer <- val:
+				// Enviou com sucesso
+			default:
+				// Buffer cheio, descarta o mais antigo e adiciona o novo
 				<-buffer
 				fmt.Printf("Janela Deslizante: Buffer cheio, descartou valor antigo para adicionar %v.\n", val)
+				buffer <- val
 			}
-			buffer <- val
 		}
 	}()
 
@@ -30,8 +34,8 @@ func janelaDeslizante(saida chan<- interface{}, entrada <-chan interface{}, tama
 }
 
 // O resto do código permanece o mesmo.
-func sequenciaNumeros(inicial, final int) <-chan interface{} {
-	saida := make(chan interface{})
+func sequenciaNumeros(inicial, final int) <-chan any {
+	saida := make(chan any)
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
@@ -43,7 +47,7 @@ func sequenciaNumeros(inicial, final int) <-chan interface{} {
 	return saida
 }
 
-func leitorLento(in <-chan interface{}) {
+func leitorLento(in <-chan any) {
 	for val := range in {
 		fmt.Printf("Consumidor: Recebeu %v\n", val)
 		time.Sleep(4 * time.Second)
@@ -52,7 +56,7 @@ func leitorLento(in <-chan interface{}) {
 
 func main() {
 	valores := sequenciaNumeros(1, 10)
-	saida := make(chan interface{})
+	saida := make(chan any)
 	go leitorLento(saida)
 	janelaDeslizante(saida, valores, 3)
 	fmt.Println("Fim da execução.")

@@ -8,30 +8,27 @@ import (
 // Utiliza um canal de sinalização para saber quando todos os canais de entrada foram processados.
 func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
+	// Número de canais de entrada
+	n := len(entradas)
+	// Canal de controle para quando todos os canais de entrada terminarem
+	canalTermino := make(chan struct{}, n)
 
-	go func() {
-		// Número de canais de entrada
-		n := len(entradas)
-		// Canal de controle para quando todos os canais de entrada terminarem
-		canalTermino := make(chan struct{}, n)
-
-		for _, c := range entradas {
-			go func(c <-chan int) {
-				for n := range c {
-					saida <- n
-				}
-				// Notifica que este canal foi processado
-				canalTermino <- struct{}{}
-			}(c)
-		}
-
-		// Quando todos os canais de entrada terminarem, fecha o canal de saída
-		go func() {
-			for i := 0; i < n; i++ {
-				<-canalTermino
+	for _, c := range entradas {
+		go func(c <-chan int) {
+			for n := range c {
+				saida <- n
 			}
-			close(saida)
-		}()
+			// Notifica que este canal foi processado
+			canalTermino <- struct{}{}
+		}(c)
+	}
+
+	// Quando todos os canais de entrada terminarem, fecha o canal de saída
+	go func() {
+		for range n {
+			<-canalTermino
+		}
+		close(saida)
 	}()
 
 	return saida
