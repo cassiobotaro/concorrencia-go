@@ -251,7 +251,7 @@ No exemplo abaixo, enviamos vários geradores como entrada para a função fan-i
 
 Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um canal de sinalização para indicar que todos os canais de entrada foram processados.
 
-Repare que temos uma _goroutine_ que aguarda um sinal indicando que todas as entradas foram consumidas (wg.Wait), finalizando assim o canal de saída.
+Repare que temos uma _goroutine_ que aguarda um sinal indicando que todas as entradas foram consumidas, finalizando assim o canal de saída.
 
 ```go
 package main
