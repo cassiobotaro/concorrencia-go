@@ -15,8 +15,8 @@ func fanin(entradas ...<-chan int) <-chan int {
 
 	for _, c := range entradas {
 		go func(c <-chan int) {
-			for n := range c {
-				saida <- n
+			for valor := range c {
+				saida <- valor
 			}
 			// Notifica que este canal foi processado
 			canalTermino <- struct{}{}

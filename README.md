@@ -271,8 +271,8 @@ func fanin(entradas ...<-chan int) <-chan int {
 
 	for _, c := range entradas {
 		go func(c <-chan int) {
-			for n := range c {
-				saida <- n
+			for valor := range c {
+				saida <- valor
 			}
 			// Notifica que este canal foi processado
 			canalTermino <- struct{}{}
@@ -626,13 +626,15 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 }
 
 func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
+	ticker := time.NewTicker(timeout)
+	defer ticker.Stop()
 	for {
 		for i := range nTickets {
 			tickets <- ticket(i)
 		}
 
 		// espera até que mais tickets possam ser emitidos
-		<-time.After(timeout)
+		<-ticker.C
 	}
 }
 
