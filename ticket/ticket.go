@@ -22,19 +22,24 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 	}
 }
 
+// bilheteria emite, no máximo, nTickets por intervalo `timeout` —
+// um ticket a cada `timeout/nTickets`. Garante o teto mesmo com consumidor
+// lento, em troca de não permitir rajadas (nenhuma janela "extra" no início).
 func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duration, nTickets int) {
-	ticker := time.NewTicker(timeout)
+	intervalo := timeout / time.Duration(nTickets)
+	ticker := time.NewTicker(intervalo)
 	defer ticker.Stop()
+
+	var i int
 	for {
-		for i := range nTickets {
-			select {
-			case tickets <- ticket(i):
-			case <-ctx.Done():
-				return
-			}
+		select {
+		case tickets <- ticket(i):
+			i++
+		case <-ctx.Done():
+			return
 		}
 
-		// espera até que mais tickets possam ser emitidos
+		// espera o intervalo mínimo antes de emitir o próximo ticket
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
