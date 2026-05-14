@@ -343,7 +343,9 @@ func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- 
 
 	select {
 	case <-ctx.Done():
-		// Se o contexto expirar antes do envio, não faz nada
+		// Se o contexto expirar antes do envio, o valor é descartado.
+		// Sinalizamos isso explicitamente para não perder a informação silenciosamente.
+		fmt.Printf("fanout: descarte por timeout, valor=%d\n", valor)
 	case saida <- valor:
 		// Se o valor for enviado com sucesso antes do timeout
 	}
