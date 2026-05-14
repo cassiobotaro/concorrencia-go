@@ -12,9 +12,13 @@ type (
 )
 
 func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
-	for w := range work {
-		<-tickets // espera por um ticket
-		w()       // executa um trabalho
+	for {
+		<-tickets // espera autorização antes de consumir trabalho
+		w, ok := <-work
+		if !ok {
+			return // canal de trabalhos fechado
+		}
+		w() // executa um trabalho
 	}
 }
 
