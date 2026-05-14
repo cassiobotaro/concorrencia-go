@@ -602,11 +602,13 @@ Um sistema de ticket é usado para controlar quando um determinado trabalho pode
 
 Exemplo: Uma API pode ser acionada apenas 15 vezes em um período de 15 minutos. A utilização é medida em blocos de 15 minutos.
 
-No exemplo, a bilheteria é um sistema de ticket que garante que apenas 15 "tickets" sejam processados a cada segundo.
+No exemplo, a bilheteria é um sistema de ticket que garante que apenas 10 "tickets" sejam emitidos a cada segundo.
 
-Enviamos através de um canal 30 processamentos a serem feitos, mas o sistema de ticket garante que apenas 15 processamentos sejam executados por segundo.
+Enviamos através de um canal 31 processamentos a serem feitos, mas o sistema de ticket garante que apenas 10 processamentos sejam executados por segundo.
 
 Como pode ser visto, o trabalhador fica bloqueado até que um ticket seja enviado através do canal.
+
+> **Nota sobre rajada (burst).** Esta implementação emite um ticket a cada `timeout/nTickets`, garantindo o teto mesmo se o consumidor for mais lento do que o ticker. Em troca, ela **não permite rajadas**: não há um saldo inicial de `nTickets` para ser consumido de uma só vez. Se você precisar de rate-limit com tolerância a rajadas (token bucket — rajada de até N seguida de reposição a `T/N`), use [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate).
 
 ```go
 package main
@@ -633,19 +635,24 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 	}
 }
 
+// bilheteria emite, no máximo, nTickets por intervalo `timeout` —
+// um ticket a cada `timeout/nTickets`. Garante o teto mesmo com consumidor
+// lento, em troca de não permitir rajadas (nenhuma janela "extra" no início).
 func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duration, nTickets int) {
-	ticker := time.NewTicker(timeout)
+	intervalo := timeout / time.Duration(nTickets)
+	ticker := time.NewTicker(intervalo)
 	defer ticker.Stop()
+
+	var i int
 	for {
-		for i := range nTickets {
-			select {
-			case tickets <- ticket(i):
-			case <-ctx.Done():
-				return
-			}
+		select {
+		case tickets <- ticket(i):
+			i++
+		case <-ctx.Done():
+			return
 		}
 
-		// espera até que mais tickets possam ser emitidos
+		// espera o intervalo mínimo antes de emitir o próximo ticket
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
