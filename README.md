@@ -354,7 +354,7 @@ func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- 
 
 func fanout(entrada <-chan int, saidas ...chan<- int) {
 	// Canal para controlar o término das publicações
-	controle := make(chan struct{}, len(saidas)*2) // capacidade para controle de todas as publicações
+	controle := make(chan struct{}, len(saidas)) // capacidade igual ao número de publicações disparadas por iteração
 
 	for valor := range entrada {
 		// Publica o valor de entrada em todas as saídas
