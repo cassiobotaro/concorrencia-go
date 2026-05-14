@@ -468,18 +468,21 @@ func sequenciaNumeros(inicial, final int) <-chan any {
 	return saida
 }
 
-func leitorLento(in <-chan any) {
+func leitorLento(in <-chan any, pronto chan<- struct{}) {
 	for val := range in {
 		fmt.Printf("Consumidor: Recebeu %v\n", val)
 		time.Sleep(4 * time.Second)
 	}
+	pronto <- struct{}{}
 }
 
 func main() {
 	valores := sequenciaNumeros(1, 10)
 	saida := make(chan any)
-	go leitorLento(saida)
+	pronto := make(chan struct{})
+	go leitorLento(saida, pronto)
 	janelaDeslizante(saida, valores, 3)
+	<-pronto
 	fmt.Println("Fim da execução.")
 }
 ```
