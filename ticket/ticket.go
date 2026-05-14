@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -17,16 +18,24 @@ func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 	}
 }
 
-func bilheteria(tickets chan<- ticket, timeout time.Duration, nTickets int) {
+func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duration, nTickets int) {
 	ticker := time.NewTicker(timeout)
 	defer ticker.Stop()
 	for {
 		for i := range nTickets {
-			tickets <- ticket(i)
+			select {
+			case tickets <- ticket(i):
+			case <-ctx.Done():
+				return
+			}
 		}
 
 		// espera até que mais tickets possam ser emitidos
-		<-ticker.C
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -35,7 +44,10 @@ func main() {
 	trabalhos := make(chan Trabalho)
 	pronto := make(chan struct{})
 
-	go bilheteria(tickets, 1*time.Second, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go bilheteria(ctx, tickets, 1*time.Second, 10)
 	go func() {
 		trabalhador(tickets, trabalhos)
 		pronto <- struct{}{}
@@ -50,4 +62,5 @@ func main() {
 
 	close(trabalhos)
 	<-pronto
+	cancel()
 }
