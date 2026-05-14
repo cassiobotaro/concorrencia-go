@@ -19,8 +19,8 @@ func janelaDeslizante(saida chan<- any, entrada <-chan any, tamanho int) {
 				// Enviou com sucesso
 			default:
 				// Buffer cheio, descarta o mais antigo e adiciona o novo
-				<-buffer
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou valor antigo para adicionar %v.\n", val)
+				descartado := <-buffer
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", descartado, val)
 				buffer <- val
 			}
 		}
