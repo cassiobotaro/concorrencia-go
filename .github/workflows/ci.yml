@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    name: Análise estática
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verifica formatação (gofmt)
+        run: |
+          fora=$(gofmt -l .)
+          if [ -n "$fora" ]; then
+            echo "Arquivos fora do gofmt:"
+            echo "$fora"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go fix (falha se houver modernização pendente)
+        run: go fix -diff ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: Instala staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: staticcheck
+        run: staticcheck ./...
+
+  race:
+    name: Exemplos com detector de corrida
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Executa cada exemplo com -race
+        run: |
+          set -euo pipefail
+          exemplos=(ola_mundo geradores pipeline trabalhador grupo fan_in fan_out lote ticket janelas_deslizantes)
+          for dir in "${exemplos[@]}"; do
+            echo "::group::$dir"
+            timeout 90s go run -race ./"$dir"/ > /dev/null
+            echo "::endgroup::"
+          done
