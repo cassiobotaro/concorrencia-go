@@ -59,7 +59,8 @@ func main() {
 	go bilheteria(ctx, tickets, 1*time.Second, 10)
 	go func() {
 		trabalhador(tickets, trabalhos)
-		pronto <- struct{}{}
+		// Fechar o canal é o idioma para sinalizar um evento único
+		close(pronto)
 	}()
 
 	for i := 0; i <= 30; i++ {
