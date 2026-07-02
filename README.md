@@ -88,6 +88,8 @@ No exemplo, valores inteiros são enviados pela função principal (main) atrav�
 
 É possível criar vários trabalhadores para processarem um mesmo canal.
 
+Repare que o término é sinalizado com `close(pronto)`, e não com o envio de um valor: fechar um canal é o idioma em Go para comunicar um evento que acontece uma única vez, e funciona para qualquer número de leitores.
+
 ```go
 package main
 
@@ -105,7 +107,9 @@ func main() {
 	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
 	go func() {
 		trabalhador(entrada)
-		pronto <- struct{}{}
+		// Fechar o canal é o idioma para sinalizar um evento único:
+		// comunica "terminou" a qualquer número de leitores.
+		close(pronto)
 	}()
 	for i := range 10 {
 		entrada <- i

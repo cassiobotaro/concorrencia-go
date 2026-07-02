@@ -14,7 +14,9 @@ func main() {
 	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
 	go func() {
 		trabalhador(entrada)
-		pronto <- struct{}{}
+		// Fechar o canal é o idioma para sinalizar um evento único:
+		// comunica "terminou" a qualquer número de leitores.
+		close(pronto)
 	}()
 	for i := range 10 {
 		entrada <- i
