@@ -18,9 +18,18 @@ func janelaDeslizante(saida chan<- any, entrada <-chan any, tamanho int) {
 			case buffer <- val:
 				// Enviou com sucesso
 			default:
-				// Buffer cheio, descarta o mais antigo e adiciona o novo
-				descartado := <-buffer
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", descartado, val)
+				// Buffer cheio, descarta o mais antigo e adiciona o novo.
+				// A evicção também precisa ser não-bloqueante: o consumidor
+				// pode drenar o buffer entre o default disparar e a leitura,
+				// e um <-buffer direto travaria para sempre.
+				select {
+				case descartado := <-buffer:
+					fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", descartado, val)
+				default:
+					// O consumidor esvaziou o buffer nesse meio tempo.
+				}
+				// Só esta goroutine envia para o buffer, então após a
+				// tentativa de evicção há espaço garantido.
 				buffer <- val
 			}
 		}
