@@ -12,13 +12,15 @@ func processar(lote []req) {
 	fmt.Println("processando lote com valores: ", lote)
 }
 
-func processadorLotes(entrada <-chan []req) chan bool {
-	pronto := make(chan bool)
+func processadorLotes(entrada <-chan []req) chan struct{} {
+	pronto := make(chan struct{})
 	go func() {
 		for lote := range entrada {
 			processar(lote)
 		}
-		pronto <- true
+		// Fechar o canal é o idioma para sinalizar um evento único,
+		// como o término do processamento.
+		close(pronto)
 	}()
 	return pronto
 }
