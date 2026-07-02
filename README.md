@@ -422,7 +422,11 @@ Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor 
 
 No exemplo, uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo à medida que a janela desliza os valores antigos são descartados.
 
-Para fazer a janela deslizante, utilizamos um buffer, que possui um tamanho fixo. Utilizamos uma técnica de seleção (select) onde, caso o canal de saída seja lido, enviamos o valor para o consumidor e o removemos do buffer. Caso o canal de entrada seja lido, o valor é adicionado ao buffer.
+Para fazer a janela deslizante, uma única _goroutine_ é dona de todo o estado (uma fila com tamanho máximo fixo) e usa um `select` para reagir ao que acontecer primeiro: se chega um valor da entrada, ele entra na fila — descartando o mais antigo se ela estiver cheia; se o consumidor está pronto para receber, o primeiro da fila é enviado.
+
+O truque idiomático aqui é o **canal nil**: um `select` nunca escolhe um case cujo canal é `nil`. Quando a fila está vazia, o canal de envio fica `nil` e o case de envio é desabilitado (não há o que enviar); quando a entrada é fechada, a variável `entrada` é definida como `nil` e o case de recebimento é desabilitado, restando apenas drenar a fila.
+
+Como só uma _goroutine_ toca a fila, não existe disputa entre produtor e consumidor pelo estado — uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e continha uma corrida sutil que podia travar o programa.
 
 ```go
 package main
@@ -432,37 +436,49 @@ import (
 	"time"
 )
 
-func janelaDeslizante(saida chan<- any, entrada <-chan any, tamanho int) {
-	buffer := make(chan any, tamanho)
+// janelaDeslizante mantém apenas os `tamanho` itens mais recentes vindos de
+// `entrada`, descartando o mais antigo quando a janela enche. Uma única
+// goroutine é dona de todo o estado (a fila), então não há disputa entre
+// produtor e consumidor pelo buffer.
+func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 	defer close(saida)
+	var fila []int
 
-	// Lógica de leitura do produtor
-	go func() {
-		defer close(buffer)
-		for val := range entrada {
-			// Tenta enviar para o buffer
-			select {
-			case buffer <- val:
-				// Enviou com sucesso
-			default:
-				// Buffer cheio, descarta o mais antigo e adiciona o novo
-				descartado := <-buffer
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", descartado, val)
-				buffer <- val
-			}
+	for entrada != nil || len(fila) > 0 {
+		// O case de envio só é habilitado quando há algo na fila:
+		// um canal nil nunca é selecionado, o que desabilita o case.
+		var envio chan<- int
+		var cabeca int
+		if len(fila) > 0 {
+			envio = saida
+			cabeca = fila[0]
 		}
-	}()
 
-	// Lógica de envio para o consumidor
-	for val := range buffer {
-		saida <- val
-		fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", val)
+		select {
+		case val, ok := <-entrada:
+			if !ok {
+				// Entrada fechada: desabilita este case (canal nil)
+				// e continua apenas drenando a fila.
+				entrada = nil
+				continue
+			}
+			if len(fila) == tamanho {
+				// Janela cheia, descarta o mais antigo e adiciona o novo
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], val)
+				fila = fila[1:]
+			}
+			fila = append(fila, val)
+
+		case envio <- cabeca:
+			fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", cabeca)
+			fila = fila[1:]
+		}
 	}
 }
 
 // O resto do código permanece o mesmo.
-func sequenciaNumeros(inicial, final int) <-chan any {
-	saida := make(chan any)
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
@@ -474,17 +490,18 @@ func sequenciaNumeros(inicial, final int) <-chan any {
 	return saida
 }
 
-func leitorLento(in <-chan any, pronto chan<- struct{}) {
+func leitorLento(in <-chan int, pronto chan<- struct{}) {
 	for val := range in {
 		fmt.Printf("Consumidor: Recebeu %v\n", val)
 		time.Sleep(4 * time.Second)
 	}
-	pronto <- struct{}{}
+	// Fechar o canal é o idioma para sinalizar um evento único
+	close(pronto)
 }
 
 func main() {
 	valores := sequenciaNumeros(1, 10)
-	saida := make(chan any)
+	saida := make(chan int)
 	pronto := make(chan struct{})
 	go leitorLento(saida, pronto)
 	janelaDeslizante(saida, valores, 3)
