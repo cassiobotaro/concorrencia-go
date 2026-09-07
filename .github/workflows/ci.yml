@@ -56,7 +56,7 @@ jobs:
       - name: Executa cada exemplo com -race
         run: |
           set -euo pipefail
-          exemplos=(ola_mundo geradores pipeline trabalhador grupo fan_in fan_out lote ticket janelas_deslizantes)
+          exemplos=(ola_mundo geradores pipeline trabalhador grupo fan_in fan_out lote ticket janelas_deslizantes backpressure)
           for dir in "${exemplos[@]}"; do
             echo "::group::$dir"
             timeout 90s go run -race ./"$dir"/ > /dev/null
