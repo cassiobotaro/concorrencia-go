@@ -6,7 +6,7 @@ As explicações e exemplos são altamente inspirados na [apresentação](https:
 
 Uma outra influência é o [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
 
-Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://gobyexample.com/context), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
+Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://github.com/cassiobotaro/contexto), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
 
 ## 🔗 Canais
 
@@ -507,6 +507,71 @@ func main() {
 	janelaDeslizante(saida, valores, 3)
 	<-pronto
 	fmt.Println("Fim da execução.")
+}
+```
+
+## 🚦 Contrapressão (backpressure)
+
+Contrapressão (backpressure) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. É o oposto da janela deslizante: lá o produtor segue livre e os valores antigos são descartados; aqui nada é descartado, o produtor é que espera.
+
+Em Go esse mecanismo já vem embutido nos canais. Um envio em um canal sem buffer bloqueia até que alguém leia. Um envio em um canal com buffer bloqueia assim que o buffer enche. Ou seja, a capacidade do canal define a folga máxima entre produtor e consumidor, e o bloqueio propaga a lentidão do consumidor para trás, etapa por etapa, até chegar em quem gera os dados.
+
+No exemplo, o produtor gera dez valores o mais rápido que consegue e o consumidor leva 200ms para processar cada um. A fila entre eles tem capacidade 3. Os primeiros valores entram de imediato, mas a partir do momento em que a fila enche, cada envio leva cerca de 200ms, que é justamente o ritmo do consumidor. O produtor não tem nenhum código para "esperar o consumidor": ele apenas escreve no canal.
+
+Repare no que não acontece: a memória não cresce, pois a fila tem um teto conhecido, e nenhum valor é perdido. O custo é que o produtor fica bloqueado, e isso precisa ser aceitável para quem está na ponta. Se quem produz é um _handler_ HTTP, por exemplo, bloquear pode significar segurar a conexão do cliente.
+
+> **Quando bloquear não é opção.** Se o produtor não pode esperar, a alternativa é rejeitar o trabalho quando a fila está cheia usando um `select` com `default`: o envio é tentado e, se não for possível de imediato, a chamada retorna um erro (um servidor devolveria algo como `503` ou `429`). Isso é descarte de carga (load shedding), e a diferença para a janela deslizante é quem sai perdendo: na janela é o valor mais antigo, no descarte de carga é o valor novo, que nem chega a entrar. Escolher entre bloquear, descartar o antigo ou rejeitar o novo depende do que o seu sistema pode tolerar. Para limitar a taxa ao longo do tempo, e não o tamanho da fila, veja o [sistema de ticket](#-sistema-de-ticket).
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+// produtor gera valores o mais rápido que consegue. Ele não sabe nada sobre a
+// velocidade do consumidor: quem o freia é a capacidade limitada do canal.
+// Quando o buffer enche, o envio bloqueia e o produtor passa a andar no ritmo
+// do consumidor. Essa é a contrapressão (backpressure).
+func produtor(saida chan<- int, n int) {
+	defer close(saida)
+	for i := 1; i <= n; i++ {
+		inicio := time.Now()
+		saida <- i
+		if espera := time.Since(inicio); espera > 10*time.Millisecond {
+			fmt.Printf("Produtor: buffer cheio, esperou %v para enviar %d\n", espera.Round(time.Millisecond), i)
+			continue
+		}
+		fmt.Printf("Produtor: enviou %d\n", i)
+	}
+}
+
+// consumidorLento simula um trabalho que leva mais tempo do que a produção,
+// como escrever em disco ou chamar um serviço externo.
+func consumidorLento(entrada <-chan int, pronto chan<- struct{}) {
+	// Fechar o canal é o idioma para sinalizar um evento único
+	defer close(pronto)
+	for valor := range entrada {
+		fmt.Printf("Consumidor: processando %d\n", valor)
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func main() {
+	// A capacidade do canal é a folga permitida entre produtor e consumidor:
+	// até 3 valores podem esperar na fila. Além disso, o produtor bloqueia.
+	// Um buffer sem limite deixaria o produtor correr à frente e a memória
+	// crescer sem controle; aqui a fila tem um teto conhecido.
+	fila := make(chan int, 3)
+	pronto := make(chan struct{})
+
+	inicio := time.Now()
+	go consumidorLento(fila, pronto)
+	produtor(fila, 10)
+	<-pronto
+
+	fmt.Printf("Fim da execução em %v: nada foi descartado, o produtor apenas esperou.\n", time.Since(inicio).Round(100*time.Millisecond))
 }
 ```
 
