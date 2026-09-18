@@ -1588,3 +1588,42 @@ func main() {
 	<-pronto
 }
 ```
+
+## 🔗 Daisy-chain
+
+**Também conhecido como:** corrente de _goroutines_, telefone sem fio.
+
+_Goroutines_ são baratas: é prático ter dezenas de milhares delas. Este exemplo, tirado da palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), liga 10 mil _goroutines_ em uma corrente, cada uma somando 1 ao valor que recebe da vizinha da direita e passando o resultado para a esquerda. O valor 1 entra por uma ponta e sai 10001 pela outra.
+
+Não é um padrão de uso diário: é uma demonstração de que a granularidade fina não custa caro. Criar 10 mil _threads_ do sistema operacional para somar 1 seria impensável; com _goroutines_ o programa termina em uma fração de segundo.
+
+```go
+package main
+
+import "fmt"
+
+// elo recebe um valor da vizinha da direita, soma 1 e passa para a esquerda.
+func elo(esquerda chan<- int, direita <-chan int) {
+	esquerda <- 1 + <-direita
+}
+
+func main() {
+	const n = 10000
+
+	// Monta a corrente da esquerda para a direita: cada goroutine fica
+	// bloqueada esperando o valor da vizinha.
+	pontaEsquerda := make(chan int)
+	esquerda := pontaEsquerda
+	var direita chan int
+	for range n {
+		direita = make(chan int)
+		go elo(esquerda, direita)
+		esquerda = direita
+	}
+
+	// Solta o primeiro valor na ponta direita...
+	go func() { direita <- 1 }()
+	// ...e espera ele atravessar as 10 mil goroutines.
+	fmt.Println(<-pontaEsquerda)
+}
+```
