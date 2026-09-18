@@ -18,6 +18,8 @@ Aqui serão apresentados alguns padrões de concorrência, porém sugiro também
 
 Um aviso sobre os exemplos: os `fmt.Print` dentro das funções existem para tornar a execução visível e não fazem parte dos padrões. Em código real, esses pontos seriam _logs_ ou nada.
 
+Cada pasta é um programa independente: execute com `go run ./pipeline/`, por exemplo. Cada uma tem também um `exemplo_test.go` com uma função `Example`, que confere a saída do exemplo (com `// Output:` quando a ordem é fixa e `// Unordered output:` quando só o conjunto de linhas é previsível). Para rodar todos, com o detector de corrida: `go test -race ./...`.
+
 Um aviso sobre nomes: os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras linguagens, por isso cada seção traz uma linha "Também conhecido como". "Produtor" e "consumidor" são papéis, não padrões: quase todo exemplo tem os dois. Eles aparecem como nomes alternativos de [Geradores](#-geradores) e [Trabalhador](#-trabalhador-worker) porque são as seções em que esses papéis estão isolados.
 
 ## 🔗 Canais
@@ -266,7 +268,7 @@ func main() {
 
 Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina: ela vaza. _Goroutines_ não são coletadas pelo coletor de lixo; a memória e os recursos que elas seguram ficam presos até o fim do programa. Em um programa curto isso passa despercebido, em um servidor que roda por meses é um vazamento de memória.
 
-O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para; a _goroutine_ fica presa no envio do quarto valor, como mostra a contagem de `runtime.NumGoroutine()`.
+O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para; a _goroutine_ fica presa no envio do quarto valor, como mostra a diferença na contagem de `runtime.NumGoroutine()` antes e depois.
 
 A solução é a mesma do canal de parada visto em [select](#️-select-timeout-e-quit-channel): cada envio disputa, em um `select`, com um sinal de cancelamento. Em vez de um canal `quit` próprio, o idioma em Go é receber um `context.Context` e observar `ctx.Done()`, um canal que é fechado quando o contexto é cancelado. A vantagem é que o mesmo contexto atravessa várias funções e etapas de um _pipeline_, carrega prazos (`context.WithTimeout`) e cancela todo mundo de uma vez. Para se aprofundar, veja o repositório sobre [context](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
 
@@ -314,6 +316,8 @@ func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan 
 }
 
 func main() {
+	antes := runtime.NumGoroutine()
+
 	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
 	valores := sequenciaNumeros(1, 1000)
 	for range 3 {
@@ -321,7 +325,7 @@ func main() {
 	}
 	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
 	// em `saida <- 4` e continuará assim até o programa terminar.
-	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-1)
+	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-antes)
 
 	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -686,10 +690,9 @@ import (
 	"time"
 )
 
-// limite é o número máximo de tarefas executando ao mesmo tempo.
-const limite = 3
-
-func main() {
+// executarTarefas dispara uma goroutine por tarefa, mas deixa no máximo
+// `limite` delas executarem ao mesmo tempo.
+func executarTarefas(tarefas, limite int) {
 	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
 	// vaga ocupada. Enviar bloqueia quando as `limite` vagas estão ocupadas.
 	sem := make(chan struct{}, limite)
@@ -700,8 +703,8 @@ func main() {
 	var ativas atomic.Int32
 
 	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
-	wg.Add(10)
-	for i := range 10 {
+	wg.Add(tarefas)
+	for i := range tarefas {
 		go func() {
 			defer wg.Done()
 
@@ -715,6 +718,11 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func main() {
+	// Dez tarefas, no máximo três ao mesmo tempo
+	executarTarefas(10, 3)
 }
 ```
 
@@ -1678,7 +1686,7 @@ Um trabalhador que roda por muito tempo pode travar sem que ninguém perceba. Co
 
 Dois detalhes do exemplo merecem atenção. O batimento é enviado com `select` e `default`: se ninguém estiver ouvindo, o sinal é simplesmente perdido, e o trabalho nunca fica bloqueado por causa dele. E o timeout do supervisor usa `time.After` dentro do laço, como no timeout por mensagem visto em [select](#️-select-timeout-e-quit-channel): qualquer batimento ou resultado renova o prazo.
 
-No exemplo, o trabalhador produz um resultado a cada três batimentos e, de propósito, trava ao produzir o terceiro. O supervisor fica dois intervalos sem notícia e o declara morto. Ao sair, o supervisor cancela o contexto, para que o trabalhador termine caso volte a responder; esperar por ele não faria sentido, já que um trabalhador travado de verdade pode nunca voltar.
+No exemplo, o trabalhador leva três intervalos e meio para produzir cada resultado e, de propósito, trava ao produzir o terceiro. O supervisor fica dois intervalos sem notícia e o declara morto. Ao sair, o supervisor cancela o contexto, para que o trabalhador termine caso volte a responder; esperar por ele não faria sentido, já que um trabalhador travado de verdade pode nunca voltar.
 
 ```go
 package main
@@ -1689,8 +1697,8 @@ import (
 	"time"
 )
 
-// trabalhador produz um resultado a cada 3 intervalos e, enquanto isso,
-// emite um batimento a cada intervalo para mostrar que continua vivo.
+// trabalhador produz um resultado a cada 3 intervalos e meio e, enquanto
+// isso, emite um batimento a cada intervalo para mostrar que continua vivo.
 // No terceiro resultado ele trava por `travamento`, e os batimentos param.
 func trabalhador(ctx context.Context, intervalo, travamento time.Duration) (<-chan struct{}, <-chan int) {
 	batimento := make(chan struct{})
@@ -1699,7 +1707,7 @@ func trabalhador(ctx context.Context, intervalo, travamento time.Duration) (<-ch
 		defer close(resultados)
 		pulso := time.NewTicker(intervalo)
 		defer pulso.Stop()
-		trabalho := time.NewTicker(3 * intervalo)
+		trabalho := time.NewTicker(3*intervalo + intervalo/2)
 		defer trabalho.Stop()
 
 		for i := 1; ; {

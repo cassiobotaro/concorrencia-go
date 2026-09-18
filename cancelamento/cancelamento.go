@@ -39,6 +39,8 @@ func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan 
 }
 
 func main() {
+	antes := runtime.NumGoroutine()
+
 	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
 	valores := sequenciaNumeros(1, 1000)
 	for range 3 {
@@ -46,7 +48,7 @@ func main() {
 	}
 	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
 	// em `saida <- 4` e continuará assim até o programa terminar.
-	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-1)
+	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-antes)
 
 	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
 	ctx, cancel := context.WithCancel(context.Background())

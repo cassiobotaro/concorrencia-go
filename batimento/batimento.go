@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// trabalhador produz um resultado a cada 3 intervalos e, enquanto isso,
-// emite um batimento a cada intervalo para mostrar que continua vivo.
+// trabalhador produz um resultado a cada 3 intervalos e meio e, enquanto
+// isso, emite um batimento a cada intervalo para mostrar que continua vivo.
 // No terceiro resultado ele trava por `travamento`, e os batimentos param.
 func trabalhador(ctx context.Context, intervalo, travamento time.Duration) (<-chan struct{}, <-chan int) {
 	batimento := make(chan struct{})
@@ -16,7 +16,7 @@ func trabalhador(ctx context.Context, intervalo, travamento time.Duration) (<-ch
 		defer close(resultados)
 		pulso := time.NewTicker(intervalo)
 		defer pulso.Stop()
-		trabalho := time.NewTicker(3 * intervalo)
+		trabalho := time.NewTicker(3*intervalo + intervalo/2)
 		defer trabalho.Stop()
 
 		for i := 1; ; {

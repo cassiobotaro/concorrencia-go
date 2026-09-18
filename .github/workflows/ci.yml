@@ -43,7 +43,7 @@ jobs:
         run: staticcheck ./...
 
   race:
-    name: Exemplos com detector de corrida
+    name: Testes e exemplos com detector de corrida
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,11 +53,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Testes (Example de cada pasta) com -race
+        run: go test -race ./...
+
       - name: Executa cada exemplo com -race
         run: |
           set -euo pipefail
-          exemplos=(ola_mundo geradores selecao primeiro cancelamento pipeline trabalhador requisicao_resposta grupo semaforo fan_in fan_out tee lote ticket corrente batimento janelas_deslizantes dono_do_estado backpressure)
-          for dir in "${exemplos[@]}"; do
+          # Toda pasta com um main é um exemplo: nenhuma fica de fora por esquecimento
+          for dir in */; do
+            dir=${dir%/}
+            ls "$dir"/*.go > /dev/null 2>&1 || continue
             echo "::group::$dir"
             timeout 90s go run -race ./"$dir"/ > /dev/null
             echo "::endgroup::"

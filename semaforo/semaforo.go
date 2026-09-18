@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// limite é o número máximo de tarefas executando ao mesmo tempo.
-const limite = 3
-
-func main() {
+// executarTarefas dispara uma goroutine por tarefa, mas deixa no máximo
+// `limite` delas executarem ao mesmo tempo.
+func executarTarefas(tarefas, limite int) {
 	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
 	// vaga ocupada. Enviar bloqueia quando as `limite` vagas estão ocupadas.
 	sem := make(chan struct{}, limite)
@@ -21,8 +20,8 @@ func main() {
 	var ativas atomic.Int32
 
 	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
-	wg.Add(10)
-	for i := range 10 {
+	wg.Add(tarefas)
+	for i := range tarefas {
 		go func() {
 			defer wg.Done()
 
@@ -36,4 +35,9 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func main() {
+	// Dez tarefas, no máximo três ao mesmo tempo
+	executarTarefas(10, 3)
 }
