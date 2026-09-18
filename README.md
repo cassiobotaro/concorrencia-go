@@ -55,6 +55,8 @@ No exemplo, uma sequência de números inteiros é gerada e enviada para um cana
 
 A função principal (_main_) irá realizar a leitura do canal e imprimir os valores. Essa é uma característica interessante sobre canais, quando utilizados com o _range_, a iteração continuará até que o canal seja fechado.
 
+> **Atenção:** este gerador não é cancelável: se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
+
 ```go
 package main
 
@@ -77,6 +79,183 @@ func main() {
 	for valor := range valores {
 		fmt.Printf("valor: %v\n", valor)
 	}
+}
+```
+
+## 🎛️ Select, timeout e quit channel
+
+O `select` é uma estrutura de controle exclusiva para concorrência: parece um `switch`, mas cada `case` é uma comunicação (um envio ou um recebimento em um canal). Ele bloqueia até que alguma das comunicações possa prosseguir; se várias puderem ao mesmo tempo, escolhe uma de forma pseudoaleatória; e, se houver um `default`, não bloqueia. Rob Pike diz na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) que o `select` é a razão de canais e _goroutines_ serem embutidos na linguagem, e não uma biblioteca.
+
+Vários exemplos mais adiante dependem dele. Aqui vemos três usos básicos, todos com o mesmo gerador `tagarela`, que fala cada vez mais devagar:
+
+- **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta: o prazo vale para cada mensagem e é renovado sempre que uma chega.
+- **Timeout para a conversa inteira.** O mesmo `time.After`, mas criado uma única vez, fora do laço: o prazo vale para a conversa toda, não importa quantas mensagens cheguem.
+- **Canal de parada (quit channel).** O gerador faz cada envio disputar com um canal `quit`. Quando quem consome não quer mais valores, fecha o `quit` e o gerador termina em vez de ficar bloqueado para sempre. Repare que o gerador fecha a saída ao sair, e é drenando a saída até o fechamento que a função `canalDeParada` tem certeza de que ele terminou.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+// tagarela é um gerador que fala cada vez mais devagar: a pausa entre as
+// mensagens cresce 100ms a cada envio. Ele só para quando o canal quit é
+// fechado; ao sair, fecha o canal de saída.
+func tagarela(nome string, quit <-chan struct{}) <-chan string {
+	saida := make(chan string)
+	go func() {
+		defer close(saida)
+		for i := 0; ; i++ {
+			// O envio disputa com o sinal de parada: o que puder
+			// prosseguir primeiro, vence.
+			select {
+			case saida <- fmt.Sprintf("%s %d", nome, i):
+				time.Sleep(time.Duration(i) * 100 * time.Millisecond)
+			case <-quit:
+				return
+			}
+		}
+	}()
+	return saida
+}
+
+// timeoutPorMensagem desiste quando UMA mensagem demora mais do que 350ms.
+// O time.After é criado a cada volta do laço, então o prazo é renovado
+// sempre que uma mensagem chega.
+func timeoutPorMensagem() {
+	quit := make(chan struct{})
+	defer close(quit)
+	c := tagarela("Ana", quit)
+
+	for {
+		select {
+		case s := <-c:
+			fmt.Println(s)
+		case <-time.After(350 * time.Millisecond):
+			fmt.Println("Ana demorou demais para falar.")
+			return
+		}
+	}
+}
+
+// timeoutDaConversa limita a duração da conversa INTEIRA a 500ms.
+// O time.After é criado uma única vez, fora do laço: o prazo não é renovado.
+func timeoutDaConversa() {
+	quit := make(chan struct{})
+	defer close(quit)
+	c := tagarela("Beto", quit)
+
+	timeout := time.After(500 * time.Millisecond)
+	for {
+		select {
+		case s := <-c:
+			fmt.Println(s)
+		case <-timeout:
+			fmt.Println("A conversa com o Beto acabou.")
+			return
+		}
+	}
+}
+
+// canalDeParada lê três mensagens e manda o gerador parar fechando o canal
+// quit. Em seguida drena a saída até ela ser fechada, o que garante que a
+// goroutine do gerador terminou de fato.
+func canalDeParada() {
+	quit := make(chan struct{})
+	c := tagarela("Caio", quit)
+
+	for range 3 {
+		fmt.Println(<-c)
+	}
+	close(quit)
+	for range c {
+	}
+	fmt.Println("Caio parou.")
+}
+
+func main() {
+	timeoutPorMensagem()
+	timeoutDaConversa()
+	canalDeParada()
+}
+```
+
+## 🛑 Cancelamento e vazamento de goroutines
+
+Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina: ela vaza. _Goroutines_ não são coletadas pelo coletor de lixo; a memória e os recursos que elas seguram ficam presos até o fim do programa. Em um programa curto isso passa despercebido, em um servidor que roda por meses é um vazamento de memória.
+
+O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para; a _goroutine_ fica presa no envio do quarto valor, como mostra a contagem de `runtime.NumGoroutine()`.
+
+A solução é a mesma do canal de parada visto em [select](#️-select-timeout-e-quit-channel): cada envio disputa, em um `select`, com um sinal de cancelamento. Em vez de um canal `quit` próprio, o idioma em Go é receber um `context.Context` e observar `ctx.Done()`, um canal que é fechado quando o contexto é cancelado. A vantagem é que o mesmo contexto atravessa várias funções e etapas de um _pipeline_, carrega prazos (`context.WithTimeout`) e cancela todo mundo de uma vez. Para se aprofundar, veja o repositório sobre [context](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+Na versão cancelável, a função principal lê três valores e chama `cancel()`. Sem essa chamada, a _goroutine_ ficaria presa exatamente como a primeira.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"runtime"
+)
+
+// sequenciaNumeros é o gerador usado nos outros exemplos. Ele não é
+// cancelável: se o consumidor parar de ler antes do fim, o envio bloqueia
+// para sempre e a goroutine vaza.
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		close(saida)
+	}()
+	return saida
+}
+
+// sequenciaNumerosCancelavel faz cada envio disputar com ctx.Done():
+// se o contexto for cancelado, a goroutine desiste do envio e termina.
+func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		defer close(saida)
+		for i := inicial; i <= final; i++ {
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				fmt.Println("gerador: cancelado, encerrando")
+				return
+			}
+		}
+	}()
+	return saida
+}
+
+func main() {
+	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
+	valores := sequenciaNumeros(1, 1000)
+	for range 3 {
+		fmt.Printf("valor: %v\n", <-valores)
+	}
+	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
+	// em `saida <- 4` e continuará assim até o programa terminar.
+	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-1)
+
+	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelaveis := sequenciaNumerosCancelavel(ctx, 1, 1000)
+	for range 3 {
+		fmt.Printf("valor: %v\n", <-cancelaveis)
+	}
+	// Sem esta chamada a goroutine ficaria presa, como a anterior.
+	cancel()
+	// O gerador fecha o canal ao sair: drenar até o fechamento garante que
+	// ele terminou de fato.
+	for range cancelaveis {
+	}
+	fmt.Println("gerador cancelável encerrado")
 }
 ```
 
@@ -232,6 +411,8 @@ Os valores gerados pelo gerador `sequenciaNumeros` são enviados para o canal de
 
 Vários pipelines poderiam ser encadeados para realizar múltiplas transformações.
 
+> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis: se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
+
 ```go
 package main
 
@@ -280,6 +461,8 @@ No exemplo abaixo, enviamos vários geradores como entrada para a função fan-i
 Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um `sync.WaitGroup` para saber quando todos os canais de entrada foram processados, pelo mesmo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers): os canais transportam os dados, o `WaitGroup` apenas conta quem terminou.
 
 Repare que temos uma _goroutine_ que aguarda em `wg.Wait()` até que todas as entradas sejam consumidas, finalizando assim o canal de saída.
+
+> **Atenção:** estes geradores não são canceláveis: se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
 
 ```go
 package main
