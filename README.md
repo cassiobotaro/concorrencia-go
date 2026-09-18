@@ -102,7 +102,7 @@ Vários exemplos mais adiante dependem dele; o [primeiro a responder](#-primeiro
 
 - **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta: o prazo vale para cada mensagem e é renovado sempre que uma chega.
 - **Timeout para a conversa inteira.** O mesmo `time.After`, mas criado uma única vez, fora do laço: o prazo vale para a conversa toda, não importa quantas mensagens cheguem.
-- **Canal de parada (quit channel).** O gerador faz cada envio disputar com um canal `quit`. Quando quem consome não quer mais valores, fecha o `quit` e o gerador termina em vez de ficar bloqueado para sempre. Repare que o gerador fecha a saída ao sair, e é drenando a saída até o fechamento que a função `canalDeParada` tem certeza de que ele terminou.
+- **Canal de parada (quit channel).** O gerador faz cada envio disputar com um canal `quit`. Quando quem consome não quer mais valores, fecha o `quit` e o gerador termina em vez de ficar bloqueado para sempre. Repare que o gerador fecha a saída ao sair, e é drenando a saída até o fechamento que a função `canalDeParada` tem certeza de que ele terminou. A variante em que o gerador confirma a parada pelo próprio `quit` está em [cancelamento](#parada-com-confirmação).
 
 ```go
 package main
@@ -332,6 +332,132 @@ func main() {
 	for range cancelaveis {
 	}
 	fmt.Println("gerador cancelável encerrado")
+
+	// Parada com confirmação (veja quit_confirmacao.go)
+	quitComConfirmacao()
+	// Vários sinais de parada combinados em um só (veja qualquer.go)
+	combinarSinais()
+}
+```
+
+### Parada com confirmação
+
+**Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
+
+Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o próprio canal `quit`: quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
+
+Com `context` o equivalente é chamar `cancel()` e em seguida esperar um canal `pronto`, fechado pela _goroutine_ ao terminar a limpeza (o `ctx` só leva o sinal em um sentido). Foi o que o exemplo anterior fez ao drenar o canal do gerador até o fechamento.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+// tagarelaComConfirmacao envia mensagens até receber algo no canal quit.
+// Antes de sair faz a limpeza e confirma no MESMO canal que terminou,
+// por isso o canal é bidirecional.
+func tagarelaComConfirmacao(nome string, quit chan string) <-chan string {
+	saida := make(chan string)
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case saida <- fmt.Sprintf("%s %d", nome, i):
+			case <-quit:
+				limpeza()
+				quit <- "parei"
+				return
+			}
+		}
+	}()
+	return saida
+}
+
+// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
+func limpeza() {
+	fmt.Println("gerador: liberando recursos...")
+	time.Sleep(100 * time.Millisecond)
+}
+
+func quitComConfirmacao() {
+	quit := make(chan string)
+	c := tagarelaComConfirmacao("Duda", quit)
+	for range 3 {
+		fmt.Println(<-c)
+	}
+	quit <- "pare"
+	// Só seguimos em frente depois que o gerador confirmar que terminou
+	fmt.Println("gerador:", <-quit)
+}
+```
+
+### Combinar sinais de parada (or-channel)
+
+**Também conhecido como:** _or-channel_, _or-done_.
+
+Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em vez de um `select` com um `case` por origem em cada _goroutine_, a função [`qualquer`](./cancelamento/qualquer.go) combina os canais em um só, que é fechado quando o primeiro deles fechar.
+
+A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Dois cuidados: o `sync.Once` garante um único `close` mesmo que dois sinais cheguem juntos (fechar duas vezes causa _panic_), e cada _goroutine_ também observa a própria saída, de modo que, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem. Existem alternativas: para duas ou três origens, um `select` explícito é o mais claro; a versão recursiva, que divide a lista ao meio, e `reflect.Select` resolvem o caso geral, mas são mais engenhosas do que claras ("_Clear is better than clever_", "_Reflection is never clear_").
+
+Se todos os sinais são contextos, prefira derivá-los uns dos outros (`context.WithTimeout(ctxRequisicao, ...)`): o contexto filho já é cancelado quando o pai é. Combinar canais vale quando as origens são independentes.
+
+A ideia de sinalizar a parada fechando um canal `done` vem do artigo sobre [_pipelines_](https://go.dev/blog/pipelines) e da palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013); o nome _or-channel_ e a ideia de combiná-los são do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017).
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// qualquer combina vários sinais de parada em um só: o canal devolvido é
+// fechado assim que o primeiro dos canais recebidos for fechado.
+func qualquer(canais ...<-chan struct{}) <-chan struct{} {
+	saida := make(chan struct{})
+	// Mais de um sinal pode chegar ao mesmo tempo, e fechar um canal duas
+	// vezes causa panic: o sync.Once garante um único close.
+	var once sync.Once
+	for _, c := range canais {
+		go func() {
+			select {
+			case <-c:
+				once.Do(func() { close(saida) })
+			case <-saida:
+				// Outro sinal chegou primeiro: esta goroutine termina
+				// em vez de ficar presa esperando `c` para sempre.
+			}
+		}()
+	}
+	return saida
+}
+
+func combinarSinais() {
+	// Três origens independentes para o sinal de parada
+	ctxRequisicao, cancelarRequisicao := context.WithCancel(context.Background())
+	defer cancelarRequisicao()
+	ctxPrazo, cancelarPrazo := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancelarPrazo()
+	desligar := make(chan struct{}) // seria fechado ao receber um sinal do sistema operacional
+
+	parar := qualquer(ctxRequisicao.Done(), ctxPrazo.Done(), desligar)
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		// Um único case de parada, não importa quantas origens existam
+		select {
+		case <-ticker.C:
+			fmt.Println("trabalhando...")
+		case <-parar:
+			fmt.Println("um dos sinais de parada chegou (aqui, o prazo de 250ms)")
+			return
+		}
+	}
 }
 ```
 

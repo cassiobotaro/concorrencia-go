@@ -61,4 +61,9 @@ func main() {
 	for range cancelaveis {
 	}
 	fmt.Println("gerador cancelável encerrado")
+
+	// Parada com confirmação (veja quit_confirmacao.go)
+	quitComConfirmacao()
+	// Vários sinais de parada combinados em um só (veja qualquer.go)
+	combinarSinais()
 }
