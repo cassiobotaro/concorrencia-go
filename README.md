@@ -346,6 +346,8 @@ func main() {
 
 Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o próprio canal `quit`: quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
 
+A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta): o método `Close` envia um canal de resposta por um `chan chan error` e espera nele; a _goroutine_ faz a limpeza e responde com o erro, se houver. É a forma mais indicada quando a confirmação precisa carregar informação.
+
 Com `context` o equivalente é chamar `cancel()` e em seguida esperar um canal `pronto`, fechado pela _goroutine_ ao terminar a limpeza (o `ctx` só leva o sinal em um sentido). Foi o que o exemplo anterior fez ao drenar o canal do gerador até o fechamento.
 
 ```go
@@ -395,7 +397,7 @@ func quitComConfirmacao() {
 
 ### Combinar sinais de parada (or-channel)
 
-**Também conhecido como:** _or-channel_, _or-done_.
+**Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_ do mesmo livro, que é outra técnica: embrulhar a leitura de um canal para que ela também respeite um sinal de parada.
 
 Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em vez de um `select` com um `case` por origem em cada _goroutine_, a função [`qualquer`](./cancelamento/qualquer.go) combina os canais em um só, que é fechado quando o primeiro deles fechar.
 
@@ -403,7 +405,7 @@ A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser a
 
 Se todos os sinais são contextos, prefira derivá-los uns dos outros (`context.WithTimeout(ctxRequisicao, ...)`): o contexto filho já é cancelado quando o pai é. Combinar canais vale quando as origens são independentes.
 
-A ideia de sinalizar a parada fechando um canal `done` vem do artigo sobre [_pipelines_](https://go.dev/blog/pipelines) e da palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013); o nome _or-channel_ e a ideia de combiná-los são do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017).
+Sobre as origens: sinalizar a parada fechando um canal vem do artigo sobre [_pipelines_](https://go.dev/blog/pipelines) (o canal `done`) e da palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), que fecha um canal `quit` para encerrar as _goroutines_ do seu `Merge`. Nenhum dos dois combina vários sinais em um só: o _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
 
 ```go
 package main
