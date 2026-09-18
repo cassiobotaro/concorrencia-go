@@ -16,6 +16,8 @@ Outras influências:
 
 Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://github.com/cassiobotaro/contexto), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
 
+Um aviso sobre nomes: os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras linguagens, por isso cada seção traz uma linha "Também conhecido como". "Produtor" e "consumidor" são papéis, não padrões: quase todo exemplo tem os dois. Eles aparecem como nomes alternativos de [Geradores](#-geradores) e [Trabalhador](#-trabalhador-worker) porque são as seções em que esses papéis estão isolados.
+
 ## 🔗 Canais
 
 Canais (channels) são uma estrutura primitiva na linguagem, e você pode utilizá-los para envio e recebimento de valores entre rotinas (_goroutines_). Os valores podem ser de qualquer tipo, inclusive do tipo canal.
@@ -56,6 +58,8 @@ func main() {
 ```
 
 ## 🆕 Geradores
+
+**Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da seção de [contrapressão](#-contrapressão-backpressure).
 
 Geradores são funções que iniciam uma _goroutine_ para escrever uma lista de valores em um canal que é retornado para quem acionou a função.
 
@@ -269,6 +273,8 @@ func main() {
 
 ## 🚧 Trabalhador (worker)
 
+**Também conhecido como:** consumidor, _sink_. O segundo só vale quando o trabalhador é o último estágio, isto é, quando não repassa nada adiante.
+
 Um trabalhador é uma _goroutine_ que recebe valores de um canal e os processa.
 
 No exemplo, valores inteiros são enviados pela função principal (main) através do canal de entrada e processados por um trabalhador.
@@ -310,6 +316,8 @@ func main() {
 ```
 
 ## 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
+
+**Também conhecido como:** _worker pool_, _pool_ de _goroutines_.
 
 A piscina de marmotinhas (carinhosamente chamada pela minha esposa) é uma coleção de _goroutines_ que ficam esperando tarefas serem atribuídas a elas. Quando a _goroutine_ finaliza a tarefa que foi atribuída, se torna disponível novamente para execução de uma nova tarefa.
 
@@ -409,6 +417,8 @@ func main() {
 
 ## 🧑‍🏭 Pipeline
 
+**Também conhecido como:** cadeia de estágios; cada função do _pipeline_ é um _estágio_ (_stage_).
+
 Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal, normalmente após realizar alguma transformação no valor.
 
 No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
@@ -459,6 +469,8 @@ func main() {
 ```
 
 ## ⚗️ Fan-in
+
+**Também conhecido como:** _merge_, multiplexação (o termo que Rob Pike usa na palestra de 2012).
 
 Um fan-in copia dados de múltiplos canais de entrada e escreve em um único canal de saída. Normalmente um fan-in só termina quando todos os canais de entrada são fechados.
 
@@ -587,6 +599,8 @@ func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
 
 ## 📣 Fan-out
 
+**Também conhecido como:** distribuição, _work distribution_.
+
 Um fan-out distribui os valores de um canal de entrada entre várias _goroutines_. O artigo sobre [_pipelines_](https://go.dev/blog/pipelines) define assim: múltiplas funções lendo do mesmo canal até que ele seja fechado. Cada valor é processado por exatamente uma delas, o que permite dividir um trabalho demorado entre vários trabalhadores.
 
 Não é preciso nenhum código para decidir quem recebe o quê: o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma, a que estiver livre.
@@ -647,6 +661,8 @@ func main() {
 ```
 
 ## 🔀 Tee (broadcast)
+
+**Também conhecido como:** _broadcast_, _publish/subscribe_ em memória. O segundo é aproximado: em um _pub/sub_ os assinantes costumam entrar e sair dinamicamente, enquanto o tee tem um conjunto fixo de saídas.
 
 Um tee copia cada valor de um canal de entrada para todos os canais de saída: todos os consumidores veem todos os valores. O nome vem do comando `tee` do Unix, que duplica o que recebe. É o oposto do [fan-out](#-fan-out), em que cada valor vai para um único consumidor.
 
@@ -773,6 +789,8 @@ func teeComTimeout(entrada <-chan int, timeout time.Duration, saidas ...chan<- i
 
 ## 🪟 Janela deslizante
 
+**Também conhecido como:** _drop-oldest buffer_. Evite tratar _ring buffer_ como sinônimo: o _ring buffer_ é um mecanismo de armazenamento, a janela deslizante é a política de descarte (sai o mais antigo).
+
 Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor lento trave um escritor rápido. Ela funciona deslizando sobre os dados. A ordem de entregas é garantida, porém dados antigos podem ser descartados se o consumidor for muito lento.
 
 No exemplo, uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo à medida que a janela desliza os valores antigos são descartados.
@@ -867,6 +885,8 @@ func main() {
 
 ## 🚦 Contrapressão (backpressure)
 
+**Também conhecido como:** _backpressure_, _bounded queue_ (fila limitada).
+
 Contrapressão (backpressure) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. É o oposto da janela deslizante: lá o produtor segue livre e os valores antigos são descartados; aqui nada é descartado, o produtor é que espera.
 
 Em Go esse mecanismo já vem embutido nos canais. Um envio em um canal sem buffer bloqueia até que alguém leia. Um envio em um canal com buffer bloqueia assim que o buffer enche. Ou seja, a capacidade do canal define a folga máxima entre produtor e consumidor, e o bloqueio propaga a lentidão do consumidor para trás, etapa por etapa, até chegar em quem gera os dados.
@@ -931,6 +951,8 @@ func main() {
 ```
 
 ## 🧑‍🤝‍🧑 Processamento em lote (batch processing)
+
+**Também conhecido como:** _batching_, _micro-batching_.
 
 Um processamento em lote (batch processing) é usado quando uma _goroutine_ gera itens um por um, mas o consumidor deseja processar os itens em blocos. Normalmente, um canal de conclusão é usado para notificar o escritor que o item foi processado. Um canal de descarga pode ser usado para forçar que o buffer seja enviado antes que ele esteja cheio.
 
@@ -1041,6 +1063,8 @@ func main() {
 ```
 
 ## 🎫 Sistema de ticket
+
+**Também conhecido como:** _rate limiting_, _throttling_. São aproximados: aqui a taxa é fixa, sem o saldo para rajadas de um _token bucket_ (veja a nota sobre rajada abaixo).
 
 Um sistema de ticket é usado para controlar quando um determinado trabalho pode ser executado, normalmente é utilizado para limitar o uso de um recurso sobre um período de tempo.
 
