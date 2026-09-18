@@ -2,9 +2,17 @@
 
 Go é fundamentada no modelo CSP (Communicating sequential processes) proposto por Tony Hoare. Neste modelo, os dados são compartilhados enviando mensagens através de canais.
 
+Há uma nuance histórica aqui. No CSP original de Hoare, um processo envia mensagens diretamente para outro processo, identificado pelo nome; é o caminho seguido por Erlang. Go vem de outro ramo da família, o das linguagens Newsqueak, Alef e Limbo, em que o canal é um valor de primeira classe: pode ser guardado em variáveis, passado como parâmetro e até enviado por outro canal. Os dois modelos são equivalentes, mas se expressam de forma diferente. A analogia de Rob Pike é a de escrever em um arquivo pelo nome (processo, Erlang) ou por meio de um descritor de arquivo (canal, Go).
+
+Outra ideia que acompanha todo o texto: [concorrência não é paralelismo](https://go.dev/blog/waza-talk). Concorrência é a composição de computações que executam de forma independente, ou seja, uma maneira de estruturar o programa. Paralelismo é executar várias computações ao mesmo tempo. Um programa concorrente pode rodar em um único processador, e um programa bem estruturado para concorrência tende a paralelizar bem quando há mais processadores disponíveis.
+
 As explicações e exemplos são altamente inspirados na [apresentação](https://github.com/andrebq/andrebq.github.io) do @andrebq.
 
-Uma outra influência é o [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
+Outras influências:
+
+- O [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
+- A palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) de Rob Pike (Google I/O 2012), de onde vêm os geradores, o fan-in, os timeouts com `select` e o canal de parada.
+- Os [Go Proverbs](https://go-proverbs.github.io/), também de Rob Pike (Gopherfest 2015): "_Don't communicate by sharing memory, share memory by communicating_", "_Concurrency is not parallelism_", "_Channels orchestrate; mutexes serialize_" e "_Clear is better than clever_".
 
 Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://github.com/cassiobotaro/contexto), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
 
