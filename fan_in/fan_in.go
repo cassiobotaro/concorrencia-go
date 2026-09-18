@@ -55,4 +55,14 @@ func main() {
 	for valor := range canal {
 		fmt.Printf("valor: %v\n", valor)
 	}
+
+	// Com um número fixo de entradas, uma única goroutine com select basta
+	// (veja fan_in_select.go)
+	canal = faninSelect(
+		sequenciaNumeros(31, 40),
+		sequenciaNumeros(41, 50),
+	)
+	for valor := range canal {
+		fmt.Printf("valor (select): %v\n", valor)
+	}
 }

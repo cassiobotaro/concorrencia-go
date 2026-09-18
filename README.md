@@ -337,6 +337,58 @@ func main() {
 	for valor := range canal {
 		fmt.Printf("valor: %v\n", valor)
 	}
+
+	// Com um número fixo de entradas, uma única goroutine com select basta
+	// (veja fan_in_select.go)
+	canal = faninSelect(
+		sequenciaNumeros(31, 40),
+		sequenciaNumeros(41, 50),
+	)
+	for valor := range canal {
+		fmt.Printf("valor (select): %v\n", valor)
+	}
+}
+```
+
+### Fan-in com uma _goroutine_ e `select`
+
+Quando o número de entradas é fixo e conhecido, Rob Pike mostra na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) uma variante mais enxuta: uma única _goroutine_ com um `select`, que repassa para a saída o valor da entrada que estiver pronta primeiro.
+
+A versão da palestra roda para sempre. [Aqui](./fan_in/fan_in_select.go) ela também trata o fechamento das entradas, com o mesmo truque do **canal nil** usado na [janela deslizante](#-janela-deslizante): quando uma entrada é fechada, a variável vira `nil` e aquele `case` deixa de ser escolhido. Quando todas viram `nil`, o laço termina e a saída é fechada. Como só uma _goroutine_ escreve na saída, ela mesma fecha o canal, sem `WaitGroup`.
+
+Quando usar cada uma? Se o número de canais é variável (um _slice_, parâmetros múltiplos), use uma _goroutine_ por entrada: um `select` tem um número fixo de `case`s escrito no código. Se o número é fixo e pequeno, o `select` é mais direto: uma _goroutine_ só e nenhuma contagem de término.
+
+```go
+package main
+
+// faninSelect combina um número fixo de canais de entrada (aqui, dois) usando
+// uma única goroutine e um select, em vez de uma goroutine por entrada.
+// Como só uma goroutine escreve na saída, ela mesma fecha o canal ao terminar:
+// não é preciso contar ninguém.
+func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		defer close(saida)
+		for entrada1 != nil || entrada2 != nil {
+			select {
+			case valor, ok := <-entrada1:
+				if !ok {
+					// Entrada fechada: um canal nil nunca é selecionado,
+					// o que desabilita este case.
+					entrada1 = nil
+					continue
+				}
+				saida <- valor
+			case valor, ok := <-entrada2:
+				if !ok {
+					entrada2 = nil
+					continue
+				}
+				saida <- valor
+			}
+		}
+	}()
+	return saida
 }
 ```
 
