@@ -376,6 +376,8 @@ No exemplo, um grupo de n trabalhadores aguarda a chegada de valores pelo canal 
 
 O grupo de trabalhadores é uma aplicação de [fan-out](#-fan-out): várias _goroutines_ leem do mesmo canal de entrada e cada valor é processado por exatamente uma delas. O que o grupo acrescenta à distribuição é o ciclo de vida dos trabalhadores, que voltam a ficar disponíveis ao terminar uma tarefa, e a coleta dos resultados em um canal de saída.
 
+O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ por tarefa e limitar apenas quantas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
+
 Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram: cada trabalhador chama `wg.Done()` ao sair e uma _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída.
 
 Por que um `WaitGroup` e não um canal? Canais orquestram o fluxo de dados entre _goroutines_, e é isso que `entrada` e `saida` fazem aqui. Contar quantas _goroutines_ já terminaram é um problema menor, e para problemas menores Rob Pike recomenda o pacote `sync`: na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_" (às vezes só é preciso um contador) e "_Always use the right tool for the job_"; nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_".
@@ -465,6 +467,58 @@ func main() {
 > 	close(saida)
 > }()
 > ```
+
+## 🚥 Semáforo (paralelismo limitado)
+
+**Também conhecido como:** _bounded parallelism_, limite de _goroutines_ em voo.
+
+Um canal com buffer de capacidade `n` funciona como um semáforo: enviar ocupa uma vaga e bloqueia quando todas estão ocupadas; receber libera uma vaga. Isso limita quantas _goroutines_ executam um trecho ao mesmo tempo sem criar um grupo fixo: cada tarefa tem sua própria _goroutine_, mas só `n` avançam de cada vez. A técnica aparece como _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+Qual a diferença para os vizinhos? O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers) fixa o número de _goroutines_; o [sistema de ticket](#-sistema-de-ticket) limita a taxa ao longo do tempo; o semáforo limita a quantidade simultânea. É um dos poucos usos de canal com buffer em que o buffer é a própria ideia, e não um detalhe de ajuste: a capacidade do canal é o limite.
+
+No exemplo, dez tarefas são disparadas de uma vez, mas o semáforo tem três vagas. A saída mostra que o número de tarefas ativas nunca passa de três. O contador atômico (`sync/atomic`) serve apenas para observar isso e não faz parte do padrão; o `sync.WaitGroup` aguarda o término de todas.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// limite é o número máximo de tarefas executando ao mesmo tempo.
+const limite = 3
+
+func main() {
+	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
+	// vaga ocupada. Enviar bloqueia quando as `limite` vagas estão ocupadas.
+	sem := make(chan struct{}, limite)
+
+	var wg sync.WaitGroup
+	// Contador usado apenas para observar quantas tarefas estão ativas;
+	// ele não faz parte do padrão.
+	var ativas atomic.Int32
+
+	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
+	wg.Add(10)
+	for i := range 10 {
+		go func() {
+			defer wg.Done()
+
+			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)
+			defer func() { <-sem }() // libera a vaga ao terminar
+
+			fmt.Printf("tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
+			time.Sleep(100 * time.Millisecond)
+			ativas.Add(-1)
+		}()
+	}
+
+	wg.Wait()
+}
+```
 
 ## 🧑‍🏭 Pipeline
 
@@ -1124,6 +1178,8 @@ Exemplo: Uma API pode ser acionada apenas 15 vezes em um período de 15 minutos.
 No exemplo, a bilheteria é um sistema de ticket que garante que apenas 10 "tickets" sejam emitidos a cada segundo.
 
 Enviamos através de um canal 31 processamentos a serem feitos, mas o sistema de ticket garante que apenas 10 processamentos sejam executados por segundo.
+
+O ticket limita a taxa ao longo do tempo. Para limitar quantas tarefas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
 
 Como pode ser visto, o trabalhador pega um trabalho e fica bloqueado até que um ticket seja enviado através do canal. A ordem importa: o trabalho é lido primeiro, assim, quando o canal de trabalhos é fechado, o trabalhador encerra sem gastar um ticket à toa.
 
