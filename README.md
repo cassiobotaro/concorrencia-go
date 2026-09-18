@@ -1627,3 +1627,88 @@ func main() {
 	fmt.Println(<-pontaEsquerda)
 }
 ```
+
+## 💓 Heartbeat
+
+**Também conhecido como:** sinal de vida, _liveness_.
+
+Um trabalhador que roda por muito tempo pode travar sem que ninguém perceba. Com um _heartbeat_ (batimento), ele emite um sinal em um canal a cada intervalo, e o supervisor usa `select` com timeout para decidir que o trabalhador morreu se o sinal não chegar. É o padrão que transforma "está demorando" em "parou de responder". A forma apresentada aqui segue a do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017).
+
+Dois detalhes do exemplo merecem atenção. O batimento é enviado com `select` e `default`: se ninguém estiver ouvindo, o sinal é simplesmente perdido, e o trabalho nunca fica bloqueado por causa dele. E o timeout do supervisor usa `time.After` dentro do laço, como no timeout por mensagem visto em [select](#️-select-timeout-e-quit-channel): qualquer batimento ou resultado renova o prazo.
+
+No exemplo, o trabalhador produz um resultado a cada três batimentos e, de propósito, trava ao produzir o terceiro. O supervisor fica dois intervalos sem notícia e o declara morto. Ao sair, o supervisor cancela o contexto, para que o trabalhador termine caso volte a responder; esperar por ele não faria sentido, já que um trabalhador travado de verdade pode nunca voltar.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+// trabalhador produz um resultado a cada 3 intervalos e, enquanto isso,
+// emite um batimento a cada intervalo para mostrar que continua vivo.
+// No terceiro resultado ele trava por `travamento`, e os batimentos param.
+func trabalhador(ctx context.Context, intervalo, travamento time.Duration) (<-chan struct{}, <-chan int) {
+	batimento := make(chan struct{})
+	resultados := make(chan int)
+	go func() {
+		defer close(resultados)
+		pulso := time.NewTicker(intervalo)
+		defer pulso.Stop()
+		trabalho := time.NewTicker(3 * intervalo)
+		defer trabalho.Stop()
+
+		for i := 1; ; {
+			select {
+			case <-ctx.Done():
+				return
+			case <-pulso.C:
+				// Envio não bloqueante: se ninguém estiver ouvindo,
+				// o batimento é perdido e o trabalho segue.
+				select {
+				case batimento <- struct{}{}:
+				default:
+				}
+			case <-trabalho.C:
+				if i == 3 {
+					// Simula um travamento
+					time.Sleep(travamento)
+				}
+				select {
+				case resultados <- i:
+					i++
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return batimento, resultados
+}
+
+// supervisor acompanha o trabalhador e o declara morto se ficar dois
+// intervalos sem batimento e sem resultado.
+func supervisor(intervalo, travamento time.Duration) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	batimento, resultados := trabalhador(ctx, intervalo, travamento)
+
+	for {
+		select {
+		case <-batimento:
+			fmt.Println("batimento")
+		case r := <-resultados:
+			fmt.Println("resultado:", r)
+		case <-time.After(2 * intervalo):
+			fmt.Println("trabalhador não responde")
+			return
+		}
+	}
+}
+
+func main() {
+	supervisor(100*time.Millisecond, 1*time.Second)
+}
+```
