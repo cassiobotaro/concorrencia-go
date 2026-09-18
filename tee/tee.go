@@ -1,43 +1,19 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
-// publicar tenta enviar um valor para o canal `saida` e utiliza um contexto com timeout
-// para garantir que a operação não dure mais do que o tempo especificado.
-func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- struct{}) {
-	// Cria um contexto com timeout de 1 segundo
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-		// Se o contexto expirar antes do envio, o valor é descartado.
-		// Sinalizamos isso explicitamente para não perder a informação silenciosamente.
-		fmt.Printf("tee: descarte por timeout, valor=%d\n", valor)
-	case saida <- valor:
-		// Se o valor for enviado com sucesso antes do timeout
-	}
-	controle <- struct{}{}
-}
-
 // tee copia cada valor da entrada para todas as saídas: todos os consumidores
-// veem todos os valores.
+// veem todos os valores. O envio é sequencial e sem buffer, então o tee só
+// avança quando todas as saídas receberam o valor: um consumidor lento
+// atrasa todos os outros.
 func tee(entrada <-chan int, saidas ...chan<- int) {
-	// Canal para controlar o término das publicações
-	controle := make(chan struct{}, len(saidas)) // capacidade igual ao número de publicações disparadas por iteração
-
 	for valor := range entrada {
-		// Publica o valor de entrada em todas as saídas
 		for _, saida := range saidas {
-			go publicar(context.Background(), saida, valor, controle)
-		}
-		// Aguarda o término de todas as publicações
-		for range saidas {
-			<-controle
+			saida <- valor
 		}
 	}
 	// Como a entrada foi consumida, fecha os canais de saída
@@ -58,29 +34,39 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func trabalhador(in <-chan int, id int, controle chan<- struct{}) {
-	for v := range in {
-		fmt.Println("id: ", id, " valor: ", v)
+// trabalhador consome os valores de uma das saídas do tee. O parâmetro
+// `demora` simula o tempo de processamento de cada valor.
+func trabalhador(id int, entrada <-chan int, demora time.Duration, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for valor := range entrada {
+		fmt.Println("id: ", id, " valor: ", valor)
+		time.Sleep(demora)
 	}
-	controle <- struct{}{}
 }
 
 func main() {
 	saida1 := make(chan int)
 	saida2 := make(chan int)
 
-	// Canal para aguardar o término dos trabalhadores
-	controle := make(chan struct{}, 2)
-
-	// Inicia trabalhadores
-	go trabalhador(saida1, 1, controle)
-	go trabalhador(saida2, 2, controle)
+	// Aguarda o término dos trabalhadores
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go trabalhador(1, saida1, 0, &wg)
+	go trabalhador(2, saida2, 0, &wg)
 
 	// Copia a sequência de números para todos os canais de saída
 	tee(sequenciaNumeros(1, 10), saida1, saida2)
+	wg.Wait()
 
-	// Aguarda o término dos trabalhadores
-	for range 2 {
-		<-controle
-	}
+	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
+	// do que o timeout, então parte dos valores destinados a ele é descartada.
+	saida1 = make(chan int)
+	saida2 = make(chan int)
+
+	wg.Add(2)
+	go trabalhador(1, saida1, 0, &wg)
+	go trabalhador(2, saida2, 250*time.Millisecond, &wg)
+
+	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
+	wg.Wait()
 }
