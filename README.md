@@ -905,7 +905,7 @@ func produtor(saida chan<- int, n int) {
 // consumidorLento simula um trabalho que leva mais tempo do que a produção,
 // como escrever em disco ou chamar um serviço externo.
 func consumidorLento(entrada <-chan int, pronto chan<- struct{}) {
-	// Fechar o canal é o idioma para sinalizar um evento único
+	// Sinaliza o término fechando o canal
 	defer close(pronto)
 	for valor := range entrada {
 		fmt.Printf("Consumidor: processando %d\n", valor)
@@ -963,8 +963,7 @@ func processadorLotes(entrada <-chan []req) chan struct{} {
 		for lote := range entrada {
 			processar(lote)
 		}
-		// Fechar o canal é o idioma para sinalizar um evento único,
-		// como o término do processamento.
+		// Sinaliza o término do processamento fechando o canal
 		close(pronto)
 	}()
 	return pronto
@@ -1051,7 +1050,7 @@ No exemplo, a bilheteria é um sistema de ticket que garante que apenas 10 "tick
 
 Enviamos através de um canal 31 processamentos a serem feitos, mas o sistema de ticket garante que apenas 10 processamentos sejam executados por segundo.
 
-Como pode ser visto, o trabalhador fica bloqueado até que um ticket seja enviado através do canal.
+Como pode ser visto, o trabalhador pega um trabalho e fica bloqueado até que um ticket seja enviado através do canal. A ordem importa: o trabalho é lido primeiro, assim, quando o canal de trabalhos é fechado, o trabalhador encerra sem gastar um ticket à toa.
 
 > **Nota sobre rajada (burst).** Esta implementação emite um ticket a cada `timeout/nTickets`, garantindo o teto mesmo se o consumidor for mais lento do que o ticker. Em troca, ela **não permite rajadas**: não há um saldo inicial de `nTickets` para ser consumido de uma só vez. Se você precisar de rate-limit com tolerância a rajadas (token bucket — rajada de até N seguida de reposição a `T/N`), use [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate).
 
@@ -1071,12 +1070,14 @@ type (
 
 func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 	for {
-		<-tickets // espera autorização antes de consumir trabalho
+		// Lê o trabalho primeiro: se o canal foi fechado, encerra
+		// sem gastar um ticket.
 		w, ok := <-work
 		if !ok {
 			return // canal de trabalhos fechado
 		}
-		w() // executa um trabalho
+		<-tickets // espera autorização antes de executar
+		w()       // executa um trabalho
 	}
 }
 
@@ -1117,7 +1118,7 @@ func main() {
 	go bilheteria(ctx, tickets, 1*time.Second, 10)
 	go func() {
 		trabalhador(tickets, trabalhos)
-		// Fechar o canal é o idioma para sinalizar um evento único
+		// Sinaliza o término fechando o canal
 		close(pronto)
 	}()
 
@@ -1130,6 +1131,5 @@ func main() {
 
 	close(trabalhos)
 	<-pronto
-	cancel()
 }
 ```

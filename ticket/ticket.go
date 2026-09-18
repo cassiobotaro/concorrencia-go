@@ -13,12 +13,14 @@ type (
 
 func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
 	for {
-		<-tickets // espera autorização antes de consumir trabalho
+		// Lê o trabalho primeiro: se o canal foi fechado, encerra
+		// sem gastar um ticket.
 		w, ok := <-work
 		if !ok {
 			return // canal de trabalhos fechado
 		}
-		w() // executa um trabalho
+		<-tickets // espera autorização antes de executar
+		w()       // executa um trabalho
 	}
 }
 
@@ -59,7 +61,7 @@ func main() {
 	go bilheteria(ctx, tickets, 1*time.Second, 10)
 	go func() {
 		trabalhador(tickets, trabalhos)
-		// Fechar o canal é o idioma para sinalizar um evento único
+		// Sinaliza o término fechando o canal
 		close(pronto)
 	}()
 
@@ -72,5 +74,4 @@ func main() {
 
 	close(trabalhos)
 	<-pronto
-	cancel()
 }

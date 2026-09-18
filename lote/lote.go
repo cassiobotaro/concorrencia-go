@@ -18,8 +18,7 @@ func processadorLotes(entrada <-chan []req) chan struct{} {
 		for lote := range entrada {
 			processar(lote)
 		}
-		// Fechar o canal é o idioma para sinalizar um evento único,
-		// como o término do processamento.
+		// Sinaliza o término do processamento fechando o canal
 		close(pronto)
 	}()
 	return pronto

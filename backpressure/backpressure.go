@@ -25,7 +25,7 @@ func produtor(saida chan<- int, n int) {
 // consumidorLento simula um trabalho que leva mais tempo do que a produção,
 // como escrever em disco ou chamar um serviço externo.
 func consumidorLento(entrada <-chan int, pronto chan<- struct{}) {
-	// Fechar o canal é o idioma para sinalizar um evento único
+	// Sinaliza o término fechando o canal
 	defer close(pronto)
 	for valor := range entrada {
 		fmt.Printf("Consumidor: processando %d\n", valor)
