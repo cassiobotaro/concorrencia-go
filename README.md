@@ -315,6 +315,57 @@ func main() {
 }
 ```
 
+## 📨 Requisição e resposta
+
+**Também conhecido como:** canal de resposta, _RPC_ interno, _restoring sequencing_ (o nome que Rob Pike dá a um uso específico da ideia, comentado abaixo).
+
+Canais são valores como qualquer outro, então uma mensagem pode carregar um canal. Quem envia uma requisição inclui nela o canal pelo qual quer receber a resposta e fica bloqueado lendo desse canal. Quem atende processa e responde no canal que veio na mensagem. Nenhum estado é compartilhado: pedido e resposta viajam por canais. Este é o mecanismo por trás de uma _goroutine_ que funciona como serviço, e reaparece na [goroutine dona do estado](#-goroutine-dona-do-estado).
+
+No exemplo, a função principal envia cinco requisições ao `servico` e espera cada resposta antes de enviar a próxima. O campo `resposta` é declarado como `chan<- int`: o serviço só pode escrever nele.
+
+Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike usa a mesma ideia para "restaurar a sequência" de um fan-in: cada mensagem carrega um canal `wait`, e quem produziu só envia a próxima mensagem depois que o leitor sinaliza nesse canal que terminou de processar a anterior.
+
+```go
+package main
+
+import "fmt"
+
+// requisicao carrega, além do valor, o canal pelo qual quem pediu quer
+// receber a resposta. O serviço só precisa escrever nele, por isso chan<-.
+type requisicao struct {
+	valor    int
+	resposta chan<- int
+}
+
+// servico atende uma requisição por vez e responde no canal que veio
+// dentro da própria mensagem.
+func servico(entrada <-chan requisicao) {
+	for req := range entrada {
+		req.resposta <- req.valor * 2
+	}
+}
+
+func main() {
+	entrada := make(chan requisicao)
+	pronto := make(chan struct{})
+	go func() {
+		servico(entrada)
+		close(pronto)
+	}()
+
+	for i := range 5 {
+		resposta := make(chan int)
+		entrada <- requisicao{valor: i, resposta: resposta}
+		// Fica bloqueado até o serviço responder
+		fmt.Println("resposta:", <-resposta)
+	}
+
+	// Sem mais requisições: o serviço termina
+	close(entrada)
+	<-pronto
+}
+```
+
 ## 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
 
 **Também conhecido como:** _worker pool_, _pool_ de _goroutines_.
