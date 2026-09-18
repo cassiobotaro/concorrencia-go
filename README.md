@@ -22,6 +22,35 @@ Cada pasta é um programa independente: execute com `go run ./pipeline/`, por ex
 
 Um aviso sobre nomes: os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras linguagens, por isso cada seção traz uma linha "Também conhecido como". "Produtor" e "consumidor" são papéis, não padrões: quase todo exemplo tem os dois. Eles aparecem como nomes alternativos de [Geradores](#-geradores) e [Trabalhador](#-trabalhador-worker) porque são as seções em que esses papéis estão isolados.
 
+## 📑 Sumário
+
+- [🔗 Canais](#-canais)
+- [🗺️ Olá Mundo](#️-olá-mundo)
+- [🆕 Geradores](#-geradores)
+- [🎛️ Select, timeout e quit channel](#️-select-timeout-e-quit-channel)
+- [🏁 Primeiro a responder](#-primeiro-a-responder)
+- [🛑 Cancelamento e vazamento de goroutines](#-cancelamento-e-vazamento-de-goroutines)
+  - [Parada com confirmação](#parada-com-confirmação)
+  - [Combinar sinais de parada (or-channel)](#combinar-sinais-de-parada-or-channel)
+- [🚧 Trabalhador (worker)](#-trabalhador-worker)
+- [📨 Requisição e resposta](#-requisição-e-resposta)
+- [👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)](#️️-grupo-de-trabalhadores-pool-of-workers)
+- [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
+- [🧑‍🏭 Pipeline](#-pipeline)
+- [⚗️ Fan-in](#️-fan-in)
+  - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
+- [📣 Fan-out](#-fan-out)
+- [🔀 Tee (broadcast)](#-tee-broadcast)
+  - [Tee com timeout](#tee-com-timeout)
+- [🪟 Janela deslizante](#-janela-deslizante)
+- [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
+  - [E com mutex?](#e-com-mutex)
+- [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
+- [🧑‍🤝‍🧑 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
+- [🎫 Sistema de ticket](#-sistema-de-ticket)
+- [⛓️ Daisy-chain](#️-daisy-chain)
+- [💓 Heartbeat](#-heartbeat)
+
 ## 🔗 Canais
 
 Canais (channels) são uma estrutura primitiva na linguagem, e você pode utilizá-los para envio e recebimento de valores entre rotinas (_goroutines_). Os valores podem ser de qualquer tipo, inclusive do tipo canal.
