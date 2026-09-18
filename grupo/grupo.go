@@ -2,36 +2,36 @@ package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 // trabalhador processa valores recebidos do canal de entrada e envia resultados para o canal de saída.
-// Ele utiliza um canal de sinalização para notificar quando terminar.
-func trabalhador(id int, entrada <-chan int, saida chan<- int, terminar chan struct{}) {
+// Ele avisa o WaitGroup quando terminar.
+func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
 	for valor := range entrada {
 		fmt.Printf("id: %d processou valor: %v\n", id, valor)
 		saida <- valor * 2
 	}
 
-	// Envia uma mensagem para o canal de sinalização ao terminar
 	fmt.Printf("id: %d terminou\n", id)
-	terminar <- struct{}{}
 }
 
 func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
 	saida := make(chan int)
-	terminar := make(chan struct{}, nTrabalhadores)
+	// Os canais transportam os dados; o WaitGroup apenas conta
+	// quantos trabalhadores ainda não terminaram.
+	var wg sync.WaitGroup
 
 	// Cria e inicia os trabalhadores
+	wg.Add(nTrabalhadores)
 	for i := range nTrabalhadores {
-		go trabalhador(i+1, entrada, saida, terminar)
+		go trabalhador(i+1, entrada, saida, &wg)
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
 	go func() {
-		// Espera receber sinais de todos os trabalhadores
-		for range nTrabalhadores {
-			<-terminar
-		}
+		wg.Wait()
 		close(saida)
 	}()
 

@@ -128,43 +128,45 @@ A piscina de marmotinhas (carinhosamente chamada pela minha esposa) é uma cole�
 
 No exemplo, um grupo de n trabalhadores aguarda a chegada de valores pelo canal de entrada. Cada trabalhador executa seu processamento e envia o resultado por um canal.
 
-Um canal de sinalização é utilizado para indicar que todos os trabalhadores terminaram.
+Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram: cada trabalhador chama `wg.Done()` ao sair e uma _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída.
+
+Por que um `WaitGroup` e não um canal? Canais orquestram o fluxo de dados entre _goroutines_, e é isso que `entrada` e `saida` fazem aqui. Contar quantas _goroutines_ já terminaram é um problema menor, e para problemas menores Rob Pike recomenda o pacote `sync`: na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_" (às vezes só é preciso um contador) e "_Always use the right tool for the job_"; nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_".
 
 ```go
 package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 // trabalhador processa valores recebidos do canal de entrada e envia resultados para o canal de saída.
-// Ele utiliza um canal de sinalização para notificar quando terminar.
-func trabalhador(id int, entrada <-chan int, saida chan<- int, terminar chan struct{}) {
+// Ele avisa o WaitGroup quando terminar.
+func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
 	for valor := range entrada {
 		fmt.Printf("id: %d processou valor: %v\n", id, valor)
 		saida <- valor * 2
 	}
 
-	// Envia uma mensagem para o canal de sinalização ao terminar
 	fmt.Printf("id: %d terminou\n", id)
-	terminar <- struct{}{}
 }
 
 func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
 	saida := make(chan int)
-	terminar := make(chan struct{}, nTrabalhadores)
+	// Os canais transportam os dados; o WaitGroup apenas conta
+	// quantos trabalhadores ainda não terminaram.
+	var wg sync.WaitGroup
 
 	// Cria e inicia os trabalhadores
+	wg.Add(nTrabalhadores)
 	for i := range nTrabalhadores {
-		go trabalhador(i+1, entrada, saida, terminar)
+		go trabalhador(i+1, entrada, saida, &wg)
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
 	go func() {
-		// Espera receber sinais de todos os trabalhadores
-		for range nTrabalhadores {
-			<-terminar
-		}
+		wg.Wait()
 		close(saida)
 	}()
 
@@ -195,6 +197,26 @@ func main() {
 	}
 }
 ```
+
+> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel: cada trabalhador envia um sinal ao terminar e a _goroutine_ que fecha a saída espera receber todos. Funciona, mas é um `WaitGroup` reimplementado à mão. No trecho abaixo, `trabalhador` é a mesma função sem o parâmetro `wg`.
+>
+> ```go
+> terminar := make(chan struct{}, nTrabalhadores)
+>
+> for i := range nTrabalhadores {
+> 	go func() {
+> 		trabalhador(i+1, entrada, saida)
+> 		terminar <- struct{}{}
+> 	}()
+> }
+>
+> go func() {
+> 	for range nTrabalhadores {
+> 		<-terminar
+> 	}
+> 	close(saida)
+> }()
+> ```
 
 ## 🧑‍🏭 Pipeline
 
@@ -253,41 +275,38 @@ A função fan-in pode receber vários canais de entrada através de [parâmetro
 
 No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
 
-Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um canal de sinalização para indicar que todos os canais de entrada foram processados.
+Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um `sync.WaitGroup` para saber quando todos os canais de entrada foram processados, pelo mesmo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers): os canais transportam os dados, o `WaitGroup` apenas conta quem terminou.
 
-Repare que temos uma _goroutine_ que aguarda um sinal indicando que todas as entradas foram consumidas, finalizando assim o canal de saída.
+Repare que temos uma _goroutine_ que aguarda em `wg.Wait()` até que todas as entradas sejam consumidas, finalizando assim o canal de saída.
 
 ```go
 package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 // fanin combina vários canais de entrada em um único canal de saída.
-// Utiliza um canal de sinalização para saber quando todos os canais de entrada foram processados.
+// Utiliza um WaitGroup para saber quando todos os canais de entrada foram processados.
 func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
-	// Número de canais de entrada
-	n := len(entradas)
-	// Canal de controle para quando todos os canais de entrada terminarem
-	canalTermino := make(chan struct{}, n)
+	var wg sync.WaitGroup
 
+	wg.Add(len(entradas))
 	for _, c := range entradas {
 		go func(c <-chan int) {
+			// Notifica que este canal foi processado
+			defer wg.Done()
 			for valor := range c {
 				saida <- valor
 			}
-			// Notifica que este canal foi processado
-			canalTermino <- struct{}{}
 		}(c)
 	}
 
 	// Quando todos os canais de entrada terminarem, fecha o canal de saída
 	go func() {
-		for range n {
-			<-canalTermino
-		}
+		wg.Wait()
 		close(saida)
 	}()
 

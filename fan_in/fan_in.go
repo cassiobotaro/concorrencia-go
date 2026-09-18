@@ -2,32 +2,29 @@ package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 // fanin combina vários canais de entrada em um único canal de saída.
-// Utiliza um canal de sinalização para saber quando todos os canais de entrada foram processados.
+// Utiliza um WaitGroup para saber quando todos os canais de entrada foram processados.
 func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
-	// Número de canais de entrada
-	n := len(entradas)
-	// Canal de controle para quando todos os canais de entrada terminarem
-	canalTermino := make(chan struct{}, n)
+	var wg sync.WaitGroup
 
+	wg.Add(len(entradas))
 	for _, c := range entradas {
 		go func(c <-chan int) {
+			// Notifica que este canal foi processado
+			defer wg.Done()
 			for valor := range c {
 				saida <- valor
 			}
-			// Notifica que este canal foi processado
-			canalTermino <- struct{}{}
 		}(c)
 	}
 
 	// Quando todos os canais de entrada terminarem, fecha o canal de saída
 	go func() {
-		for range n {
-			<-canalTermino
-		}
+		wg.Wait()
 		close(saida)
 	}()
 
