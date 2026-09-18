@@ -11,16 +11,16 @@ type (
 	ticket   int
 )
 
-func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
+func trabalhador(tickets <-chan ticket, trabalhos <-chan Trabalho) {
 	for {
 		// Lê o trabalho primeiro: se o canal foi fechado, encerra
 		// sem gastar um ticket.
-		w, ok := <-work
+		trabalho, ok := <-trabalhos
 		if !ok {
 			return // canal de trabalhos fechado
 		}
-		<-tickets // espera autorização antes de executar
-		w()       // executa um trabalho
+		<-tickets  // espera autorização antes de executar
+		trabalho() // executa um trabalho
 	}
 }
 

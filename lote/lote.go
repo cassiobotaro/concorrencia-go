@@ -12,7 +12,7 @@ func processar(lote []req) {
 	fmt.Println("processando lote com valores: ", lote)
 }
 
-func processadorLotes(entrada <-chan []req) chan struct{} {
+func processadorLotes(entrada <-chan []req) <-chan struct{} {
 	pronto := make(chan struct{})
 	go func() {
 		for lote := range entrada {
@@ -24,7 +24,7 @@ func processadorLotes(entrada <-chan []req) chan struct{} {
 	return pronto
 }
 
-func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) chan []req {
+func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) <-chan []req {
 	saida := make(chan []req)
 	go func() {
 		defer close(saida)
@@ -33,7 +33,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 		for {
 			select {
 			// enquanto houver itens para processar
-			case r, ok := <-entrada:
+			case item, ok := <-entrada:
 				if !ok {
 					// envia o que tiver no buffer antes de sair
 					if len(buf) > 0 {
@@ -43,7 +43,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 					return
 				}
 				// Adiciona o item no buffer
-				buf = append(buf, r)
+				buf = append(buf, item)
 				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
 					saida <- buf

@@ -17,7 +17,7 @@ func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGrou
 	fmt.Printf("id: %d terminou\n", id)
 }
 
-func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
+func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	saida := make(chan int)
 	// Os canais transportam os dados; o WaitGroup apenas conta
 	// quantos trabalhadores ainda não terminaram.

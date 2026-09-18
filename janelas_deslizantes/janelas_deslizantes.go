@@ -24,7 +24,7 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 		}
 
 		select {
-		case val, ok := <-entrada:
+		case valor, ok := <-entrada:
 			if !ok {
 				// Entrada fechada: desabilita este case (canal nil)
 				// e continua apenas drenando a fila.
@@ -33,10 +33,10 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 			}
 			if len(fila) == tamanho {
 				// Janela cheia, descarta o mais antigo e adiciona o novo
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], val)
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
 				fila = fila[1:]
 			}
-			fila = append(fila, val)
+			fila = append(fila, valor)
 
 		case envio <- cabeca:
 			fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", cabeca)
@@ -59,9 +59,9 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func leitorLento(in <-chan int, pronto chan<- struct{}) {
-	for val := range in {
-		fmt.Printf("Consumidor: Recebeu %v\n", val)
+func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
+	for valor := range entrada {
+		fmt.Printf("Consumidor: Recebeu %v\n", valor)
 		time.Sleep(4 * time.Second)
 	}
 	// Fechar o canal é o idioma para sinalizar um evento único

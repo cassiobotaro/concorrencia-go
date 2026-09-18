@@ -594,7 +594,7 @@ func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGrou
 	fmt.Printf("id: %d terminou\n", id)
 }
 
-func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) chan int {
+func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	saida := make(chan int)
 	// Os canais transportam os dados; o WaitGroup apenas conta
 	// quantos trabalhadores ainda não terminaram.
@@ -720,7 +720,7 @@ Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal
 
 No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
 
-Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`).
+Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`). Com isso o compilador passa a impedir que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas; a única exceção é o canal `quit` da [parada com confirmação](#parada-com-confirmação), que é usado nos dois sentidos de propósito.
 
 Os valores gerados pelo gerador `sequenciaNumeros` são enviados para o canal de entrada do pipeline e seu valor transformado recebido pelo canal de saída na função principal e é impresso.
 
@@ -796,14 +796,14 @@ func fanin(entradas ...<-chan int) <-chan int {
 	var wg sync.WaitGroup
 
 	wg.Add(len(entradas))
-	for _, c := range entradas {
-		go func(c <-chan int) {
+	for _, entrada := range entradas {
+		go func(entrada <-chan int) {
 			// Notifica que este canal foi processado
 			defer wg.Done()
-			for valor := range c {
+			for valor := range entrada {
 				saida <- valor
 			}
-		}(c)
+		}(entrada)
 	}
 
 	// Quando todos os canais de entrada terminarem, fecha o canal de saída
@@ -1125,7 +1125,7 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 		}
 
 		select {
-		case val, ok := <-entrada:
+		case valor, ok := <-entrada:
 			if !ok {
 				// Entrada fechada: desabilita este case (canal nil)
 				// e continua apenas drenando a fila.
@@ -1134,10 +1134,10 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 			}
 			if len(fila) == tamanho {
 				// Janela cheia, descarta o mais antigo e adiciona o novo
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], val)
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
 				fila = fila[1:]
 			}
-			fila = append(fila, val)
+			fila = append(fila, valor)
 
 		case envio <- cabeca:
 			fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", cabeca)
@@ -1160,9 +1160,9 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func leitorLento(in <-chan int, pronto chan<- struct{}) {
-	for val := range in {
-		fmt.Printf("Consumidor: Recebeu %v\n", val)
+func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
+	for valor := range entrada {
+		fmt.Printf("Consumidor: Recebeu %v\n", valor)
 		time.Sleep(4 * time.Second)
 	}
 	// Fechar o canal é o idioma para sinalizar um evento único
@@ -1410,7 +1410,7 @@ func processar(lote []req) {
 	fmt.Println("processando lote com valores: ", lote)
 }
 
-func processadorLotes(entrada <-chan []req) chan struct{} {
+func processadorLotes(entrada <-chan []req) <-chan struct{} {
 	pronto := make(chan struct{})
 	go func() {
 		for lote := range entrada {
@@ -1422,7 +1422,7 @@ func processadorLotes(entrada <-chan []req) chan struct{} {
 	return pronto
 }
 
-func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) chan []req {
+func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) <-chan []req {
 	saida := make(chan []req)
 	go func() {
 		defer close(saida)
@@ -1431,7 +1431,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 		for {
 			select {
 			// enquanto houver itens para processar
-			case r, ok := <-entrada:
+			case item, ok := <-entrada:
 				if !ok {
 					// envia o que tiver no buffer antes de sair
 					if len(buf) > 0 {
@@ -1441,7 +1441,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 					return
 				}
 				// Adiciona o item no buffer
-				buf = append(buf, r)
+				buf = append(buf, item)
 				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
 					saida <- buf
@@ -1525,16 +1525,16 @@ type (
 	ticket   int
 )
 
-func trabalhador(tickets <-chan ticket, work <-chan Trabalho) {
+func trabalhador(tickets <-chan ticket, trabalhos <-chan Trabalho) {
 	for {
 		// Lê o trabalho primeiro: se o canal foi fechado, encerra
 		// sem gastar um ticket.
-		w, ok := <-work
+		trabalho, ok := <-trabalhos
 		if !ok {
 			return // canal de trabalhos fechado
 		}
-		<-tickets // espera autorização antes de executar
-		w()       // executa um trabalho
+		<-tickets  // espera autorização antes de executar
+		trabalho() // executa um trabalho
 	}
 }
 
