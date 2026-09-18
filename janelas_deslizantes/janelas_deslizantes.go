@@ -48,7 +48,8 @@ func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 	}
 }
 
-// O resto do código permanece o mesmo.
+// sequenciaNumeros, aqui, avisa a cada envio e faz uma pausa de um segundo
+// entre eles, para que o produtor seja mais rápido do que o consumidor.
 func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
