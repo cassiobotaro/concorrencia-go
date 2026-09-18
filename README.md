@@ -128,6 +128,8 @@ A piscina de marmotinhas (carinhosamente chamada pela minha esposa) é uma cole�
 
 No exemplo, um grupo de n trabalhadores aguarda a chegada de valores pelo canal de entrada. Cada trabalhador executa seu processamento e envia o resultado por um canal.
 
+O grupo de trabalhadores é uma aplicação de [fan-out](#-fan-out): várias _goroutines_ leem do mesmo canal de entrada e cada valor é processado por exatamente uma delas. O que o grupo acrescenta à distribuição é o ciclo de vida dos trabalhadores, que voltam a ficar disponíveis ao terminar uma tarefa, e a coleta dos resultados em um canal de saída.
+
 Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram: cada trabalhador chama `wg.Done()` ao sair e uma _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída.
 
 Por que um `WaitGroup` e não um canal? Canais orquestram o fluxo de dados entre _goroutines_, e é isso que `entrada` e `saida` fazem aqui. Contar quantas _goroutines_ já terminaram é um problema menor, e para problemas menores Rob Pike recomenda o pacote `sync`: na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_" (às vezes só é preciso um contador) e "_Always use the right tool for the job_"; nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_".
@@ -394,11 +396,72 @@ func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
 
 ## 📣 Fan-out
 
-Um fan-out copia dados de um canal de entrada para múltiplos canais de saída.
+Um fan-out distribui os valores de um canal de entrada entre várias _goroutines_. O artigo sobre [_pipelines_](https://go.dev/blog/pipelines) define assim: múltiplas funções lendo do mesmo canal até que ele seja fechado. Cada valor é processado por exatamente uma delas, o que permite dividir um trabalho demorado entre vários trabalhadores.
 
-No exemplo, uma sequência de números é gerada e enviada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
+Não é preciso nenhum código para decidir quem recebe o quê: o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma, a que estiver livre.
 
-Esta implementação de fan-out tenta garantir a entrega de todas as mensagens utilizando um agrupador (WaitGroup) para aguardar a publicação dos valores em todos os canais de saída. A publicação é feita em sua própria _goroutine_ e conta também com um mecanismo (_timer_) de forma a prevenir o bloqueio caso algum canal de saída não consiga consumir a mensagem. As mensagens não consumidas são descartadas.
+No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um `sync.WaitGroup` aguarda o término de todos, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), que é uma aplicação deste padrão.
+
+Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para todos os consumidores.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// trabalhador lê do canal de entrada, que é compartilhado com os demais
+// trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
+// livre primeiro, recebe.
+func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for valor := range entrada {
+		fmt.Printf("id: %d processando valor: %v\n", id, valor)
+		// Simula um processamento demorado
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// fanout distribui os valores de um único canal de entrada entre n
+// trabalhadores e só retorna quando todos terminarem.
+func fanout(entrada <-chan int, n int) {
+	var wg sync.WaitGroup
+
+	wg.Add(n)
+	for i := range n {
+		go trabalhador(i+1, entrada, &wg)
+	}
+	wg.Wait()
+}
+
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+func main() {
+	// Três trabalhadores dividem entre si os dez valores da sequência
+	fanout(sequenciaNumeros(1, 10), 3)
+}
+```
+
+## 🔀 Tee (broadcast)
+
+Um tee copia cada valor de um canal de entrada para todos os canais de saída: todos os consumidores veem todos os valores. O nome vem do comando `tee` do Unix, que duplica o que recebe. É o oposto do [fan-out](#-fan-out), em que cada valor vai para um único consumidor.
+
+No exemplo, uma sequência de números é gerada e copiada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
+
+Esta implementação de tee tenta garantir a entrega de todas as mensagens utilizando um agrupador (WaitGroup) para aguardar a publicação dos valores em todos os canais de saída. A publicação é feita em sua própria _goroutine_ e conta também com um mecanismo (_timer_) de forma a prevenir o bloqueio caso algum canal de saída não consiga consumir a mensagem. As mensagens não consumidas são descartadas.
 
 ```go
 package main
@@ -420,14 +483,16 @@ func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- 
 	case <-ctx.Done():
 		// Se o contexto expirar antes do envio, o valor é descartado.
 		// Sinalizamos isso explicitamente para não perder a informação silenciosamente.
-		fmt.Printf("fanout: descarte por timeout, valor=%d\n", valor)
+		fmt.Printf("tee: descarte por timeout, valor=%d\n", valor)
 	case saida <- valor:
 		// Se o valor for enviado com sucesso antes do timeout
 	}
 	controle <- struct{}{}
 }
 
-func fanout(entrada <-chan int, saidas ...chan<- int) {
+// tee copia cada valor da entrada para todas as saídas: todos os consumidores
+// veem todos os valores.
+func tee(entrada <-chan int, saidas ...chan<- int) {
 	// Canal para controlar o término das publicações
 	controle := make(chan struct{}, len(saidas)) // capacidade igual ao número de publicações disparadas por iteração
 
@@ -477,8 +542,8 @@ func main() {
 	go trabalhador(saida1, 1, controle)
 	go trabalhador(saida2, 2, controle)
 
-	// Distribui a sequência de números para os canais de saída
-	fanout(sequenciaNumeros(1, 10), saida1, saida2)
+	// Copia a sequência de números para todos os canais de saída
+	tee(sequenciaNumeros(1, 10), saida1, saida2)
 
 	// Aguarda o término dos trabalhadores
 	for range 2 {

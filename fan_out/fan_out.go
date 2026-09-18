@@ -1,47 +1,33 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
-// publicar tenta enviar um valor para o canal `saida` e utiliza um contexto com timeout
-// para garantir que a operação não dure mais do que o tempo especificado.
-func publicar(ctx context.Context, saida chan<- int, valor int, controle chan<- struct{}) {
-	// Cria um contexto com timeout de 1 segundo
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-		// Se o contexto expirar antes do envio, o valor é descartado.
-		// Sinalizamos isso explicitamente para não perder a informação silenciosamente.
-		fmt.Printf("fanout: descarte por timeout, valor=%d\n", valor)
-	case saida <- valor:
-		// Se o valor for enviado com sucesso antes do timeout
+// trabalhador lê do canal de entrada, que é compartilhado com os demais
+// trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
+// livre primeiro, recebe.
+func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for valor := range entrada {
+		fmt.Printf("id: %d processando valor: %v\n", id, valor)
+		// Simula um processamento demorado
+		time.Sleep(100 * time.Millisecond)
 	}
-	controle <- struct{}{}
 }
 
-func fanout(entrada <-chan int, saidas ...chan<- int) {
-	// Canal para controlar o término das publicações
-	controle := make(chan struct{}, len(saidas)) // capacidade igual ao número de publicações disparadas por iteração
+// fanout distribui os valores de um único canal de entrada entre n
+// trabalhadores e só retorna quando todos terminarem.
+func fanout(entrada <-chan int, n int) {
+	var wg sync.WaitGroup
 
-	for valor := range entrada {
-		// Publica o valor de entrada em todas as saídas
-		for _, saida := range saidas {
-			go publicar(context.Background(), saida, valor, controle)
-		}
-		// Aguarda o término de todas as publicações
-		for range saidas {
-			<-controle
-		}
+	wg.Add(n)
+	for i := range n {
+		go trabalhador(i+1, entrada, &wg)
 	}
-	// Como a entrada foi consumida, fecha os canais de saída
-	for _, saida := range saidas {
-		close(saida)
-	}
+	wg.Wait()
 }
 
 func sequenciaNumeros(inicial, final int) <-chan int {
@@ -56,29 +42,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 	return saida
 }
 
-func trabalhador(in <-chan int, id int, controle chan<- struct{}) {
-	for v := range in {
-		fmt.Println("id: ", id, " valor: ", v)
-	}
-	controle <- struct{}{}
-}
-
 func main() {
-	saida1 := make(chan int)
-	saida2 := make(chan int)
-
-	// Canal para aguardar o término dos trabalhadores
-	controle := make(chan struct{}, 2)
-
-	// Inicia trabalhadores
-	go trabalhador(saida1, 1, controle)
-	go trabalhador(saida2, 2, controle)
-
-	// Distribui a sequência de números para os canais de saída
-	fanout(sequenciaNumeros(1, 10), saida1, saida2)
-
-	// Aguarda o término dos trabalhadores
-	for range 2 {
-		<-controle
-	}
+	// Três trabalhadores dividem entre si os dez valores da sequência
+	fanout(sequenciaNumeros(1, 10), 3)
 }
