@@ -98,7 +98,7 @@ func main() {
 
 O `select` é uma estrutura de controle exclusiva para concorrência: parece um `switch`, mas cada `case` é uma comunicação (um envio ou um recebimento em um canal). Ele bloqueia até que alguma das comunicações possa prosseguir; se várias puderem ao mesmo tempo, escolhe uma de forma pseudoaleatória; e, se houver um `default`, não bloqueia. Rob Pike diz na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) que o `select` é a razão de canais e _goroutines_ serem embutidos na linguagem, e não uma biblioteca.
 
-Vários exemplos mais adiante dependem dele. Aqui vemos três usos básicos, todos com o mesmo gerador `tagarela`, que fala cada vez mais devagar:
+Vários exemplos mais adiante dependem dele; o [primeiro a responder](#-primeiro-a-responder), logo a seguir, combina o timeout com réplicas. Aqui vemos três usos básicos, todos com o mesmo gerador `tagarela`, que fala cada vez mais devagar:
 
 - **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta: o prazo vale para cada mensagem e é renovado sempre que uma chega.
 - **Timeout para a conversa inteira.** O mesmo `time.After`, mas criado uma única vez, fora do laço: o prazo vale para a conversa toda, não importa quantas mensagens cheguem.
@@ -191,6 +191,70 @@ func main() {
 	timeoutPorMensagem()
 	timeoutDaConversa()
 	canalDeParada()
+}
+```
+
+## 🏁 Primeiro a responder
+
+**Também conhecido como:** _hedged request_, réplicas, `First` (o nome da função na palestra de Pike).
+
+Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com o timeout visto em [select](#️-select-timeout-e-quit-channel), dá um programa que é ao mesmo tempo rápido, replicado e resistente a falhas.
+
+Repare no canal com buffer de tamanho `len(replicas)`. A função lê uma única resposta e retorna; as demais _goroutines_ ainda vão tentar enviar as suas. Com um canal sem buffer, elas ficariam bloqueadas no envio para sempre, pois ninguém mais vai ler: um vazamento de _goroutines_, o assunto da seção de [cancelamento](#-cancelamento-e-vazamento-de-goroutines). Com uma vaga por réplica, cada perdedora deposita sua resposta e termina. É o caso didático de "buffer para não vazar".
+
+No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um timeout de 20ms; o canal `resposta` tem buffer 1 pelo mesmo motivo.
+
+```go
+package main
+
+import (
+	"fmt"
+	"math/rand/v2"
+	"time"
+)
+
+// replica simula um servidor cuja latência varia a cada chamada.
+func replica(nome string) func(string) string {
+	return func(consulta string) string {
+		time.Sleep(rand.N(100 * time.Millisecond))
+		return fmt.Sprintf("%s respondeu a %q", nome, consulta)
+	}
+}
+
+// primeiro envia a mesma consulta a todas as réplicas e devolve a primeira
+// resposta que chegar.
+func primeiro(consulta string, replicas ...func(string) string) string {
+	// O buffer tem uma vaga por réplica: as respostas perdedoras são
+	// depositadas sem bloquear. Sem ele, essas goroutines ficariam presas
+	// no envio para sempre, pois ninguém mais vai ler do canal.
+	c := make(chan string, len(replicas))
+	for _, r := range replicas {
+		go func() { c <- r(consulta) }()
+	}
+	return <-c
+}
+
+func main() {
+	replicas := []func(string) string{
+		replica("réplica 1"),
+		replica("réplica 2"),
+		replica("réplica 3"),
+	}
+
+	fmt.Println(primeiro("golang", replicas...))
+
+	// Combinado com timeout: usa a resposta mais rápida, desde que chegue
+	// em até 20ms. O buffer de tamanho 1 tem o mesmo papel: se o timeout
+	// vencer, a goroutine ainda consegue depositar a resposta e terminar.
+	resposta := make(chan string, 1)
+	go func() { resposta <- primeiro("csp", replicas...) }()
+
+	select {
+	case r := <-resposta:
+		fmt.Println(r)
+	case <-time.After(20 * time.Millisecond):
+		fmt.Println("tempo esgotado: nenhuma réplica respondeu em 20ms")
+	}
 }
 ```
 
