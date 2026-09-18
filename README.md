@@ -904,7 +904,7 @@ Para fazer a janela deslizante, uma única _goroutine_ é dona de todo o estado 
 
 O truque idiomático aqui é o **canal nil**: um `select` nunca escolhe um case cujo canal é `nil`. Quando a fila está vazia, o canal de envio fica `nil` e o case de envio é desabilitado (não há o que enviar); quando a entrada é fechada, a variável `entrada` é definida como `nil` e o case de recebimento é desabilitado, restando apenas drenar a fila.
 
-Como só uma _goroutine_ toca a fila, não existe disputa entre produtor e consumidor pelo estado — uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e continha uma corrida sutil que podia travar o programa.
+Como só uma _goroutine_ toca a fila (a técnica da [goroutine dona do estado](#-goroutine-dona-do-estado)), não existe disputa entre produtor e consumidor pelo estado — uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e continha uma corrida sutil que podia travar o programa.
 
 ```go
 package main
@@ -985,6 +985,140 @@ func main() {
 	janelaDeslizante(saida, valores, 3)
 	<-pronto
 	fmt.Println("Fim da execução.")
+}
+```
+
+## 🔐 Goroutine dona do estado
+
+**Também conhecido como:** monitor, confinamento, ator. O último é aproximado: no modelo de atores a mensagem vai para o ator pelo nome, e aqui vai por canais (é a mesma diferença entre Erlang e Go comentada na introdução).
+
+"_Don't communicate by sharing memory, share memory by communicating_": não comunique compartilhando memória; compartilhe memória comunicando. Em vez de proteger uma variável com mutex e deixar várias _goroutines_ mexerem nela, uma única _goroutine_ é dona do estado e as outras pedem alterações e leituras por canais. Não há corrida porque só uma _goroutine_ toca o dado. A [janela deslizante](#-janela-deslizante) já usa essa técnica internamente; aqui ela vira o padrão em si.
+
+No exemplo, a _goroutine_ `contador` é dona de um mapa de contagem por chave. Três _goroutines_ enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](#-requisição-e-resposta). O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+// consulta pede a contagem de uma chave e carrega o canal de resposta,
+// como no exemplo de requisição e resposta.
+type consulta struct {
+	chave    string
+	resposta chan<- int
+}
+
+// contador é a goroutine dona do estado: só ela toca o mapa `contagem`.
+// As demais goroutines pedem alterações e leituras pelos canais.
+// Termina quando o canal `incrementar` é fechado.
+func contador(incrementar <-chan string, consultar <-chan consulta) {
+	contagem := make(map[string]int)
+	for {
+		select {
+		case chave, ok := <-incrementar:
+			if !ok {
+				return
+			}
+			contagem[chave]++
+		case c := <-consultar:
+			c.resposta <- contagem[c.chave]
+		}
+	}
+}
+
+func main() {
+	incrementar := make(chan string)
+	consultar := make(chan consulta)
+	pronto := make(chan struct{})
+	go func() {
+		contador(incrementar, consultar)
+		close(pronto)
+	}()
+
+	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
+	// os pedidos são atendidos um por vez pela goroutine dona.
+	var wg sync.WaitGroup
+	wg.Add(3)
+	for _, chave := range []string{"gopher", "gopher", "marmota"} {
+		go func() {
+			defer wg.Done()
+			for range 1000 {
+				incrementar <- chave
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, chave := range []string{"gopher", "marmota"} {
+		resposta := make(chan int)
+		consultar <- consulta{chave: chave, resposta: resposta}
+		fmt.Printf("dona do estado: %s = %d\n", chave, <-resposta)
+	}
+
+	// Sem mais incrementos: a goroutine dona termina
+	close(incrementar)
+	<-pronto
+
+	// A mesma contagem feita com mutex (veja com_mutex.go)
+	comMutex()
+}
+```
+
+### E com mutex?
+
+O contraponto também é de Pike: "_Channels orchestrate; mutexes serialize_". Se tudo o que você precisa é serializar o acesso a um contador ou a um mapa, um `sync.Mutex` é mais simples e mais claro, como mostra a [versão abaixo](./dono_do_estado/com_mutex.go), que produz o mesmo resultado.
+
+A _goroutine_ dona do estado compensa quando há regras sobre _como_ o estado muda (validação, ordem, eventos), quando ela precisa reagir a vários canais com `select` (entradas, prazos, cancelamento), como faz a janela deslizante, ou quando o estado tem ciclo de vida próprio. Se nada disso se aplica, use o mutex.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+// contadorMutex resolve o mesmo problema serializando o acesso ao mapa.
+// Quando tudo o que se precisa é proteger um dado, esta versão é mais
+// simples e mais clara do que uma goroutine dona do estado.
+type contadorMutex struct {
+	mu       sync.Mutex
+	contagem map[string]int
+}
+
+func (c *contadorMutex) incrementar(chave string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.contagem[chave]++
+}
+
+func (c *contadorMutex) consultar(chave string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.contagem[chave]
+}
+
+func comMutex() {
+	c := contadorMutex{contagem: make(map[string]int)}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	for _, chave := range []string{"gopher", "gopher", "marmota"} {
+		go func() {
+			defer wg.Done()
+			for range 1000 {
+				c.incrementar(chave)
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, chave := range []string{"gopher", "marmota"} {
+		fmt.Printf("mutex: %s = %d\n", chave, c.consultar(chave))
+	}
 }
 ```
 
