@@ -12,13 +12,17 @@ import (
 func produtor(saida chan<- int, n int) {
 	defer close(saida)
 	for i := 1; i <= n; i++ {
-		inicio := time.Now()
-		saida <- i
-		if espera := time.Since(inicio); espera > 10*time.Millisecond {
-			fmt.Printf("Produtor: buffer cheio, esperou %v para enviar %d\n", espera.Round(time.Millisecond), i)
-			continue
+		// select com default pergunta "dá para enviar agora?" sem bloquear.
+		// Aqui ele serve apenas para observar a fila cheia: nada é descartado,
+		// pois o default faz em seguida o envio bloqueante.
+		select {
+		case saida <- i:
+			fmt.Printf("Produtor: enviou %d\n", i)
+		default:
+			fmt.Printf("Produtor: fila cheia, esperando para enviar %d\n", i)
+			saida <- i
+			fmt.Printf("Produtor: enviou %d após esperar\n", i)
 		}
-		fmt.Printf("Produtor: enviou %d\n", i)
 	}
 }
 

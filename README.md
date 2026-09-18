@@ -16,6 +16,8 @@ Outras influências:
 
 Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://github.com/cassiobotaro/contexto), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
 
+Um aviso sobre os exemplos: os `fmt.Print` dentro das funções existem para tornar a execução visível e não fazem parte dos padrões. Em código real, esses pontos seriam _logs_ ou nada.
+
 Um aviso sobre nomes: os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras linguagens, por isso cada seção traz uma linha "Também conhecido como". "Produtor" e "consumidor" são papéis, não padrões: quase todo exemplo tem os dois. Eles aparecem como nomes alternativos de [Geradores](#-geradores) e [Trabalhador](#-trabalhador-worker) porque são as seções em que esses papéis estão isolados.
 
 ## 🔗 Canais
@@ -36,9 +38,9 @@ Escrever em um canal fechado retorna um erro (_panic_).
 
 O [primeiro exemplo](./ola_mundo/ola_mundo.go) mostra como criar um canal, que será utilizado como ponte entre a aplicação principal e uma _goroutine_.
 
-O programa principal fica bloqueado até que a mensagem "Olá mundo" seja enviada para o canal.
+O programa principal fica bloqueado em `<-canal` até que a _goroutine_ envie a mensagem "Olá, mundo!".
 
-Quando isto ocorre, a _goroutine_ é desbloqueada e a mensagem é exibida.
+Quando isto ocorre, é o programa principal que é desbloqueado: ele recebe a mensagem e a exibe. O envio e o recebimento acontecem juntos, pois o canal não tem buffer.
 
 Quando o programa principal termina, a _goroutine_ é também terminada.
 
@@ -64,6 +66,8 @@ func main() {
 Geradores são funções que iniciam uma _goroutine_ para escrever uma lista de valores em um canal que é retornado para quem acionou a função.
 
 No exemplo, uma sequência de números inteiros é gerada e enviada para um canal.
+
+A função `sequenciaNumeros` reaparece em vários exemplos, e é copiada de propósito: assim cada arquivo é autocontido e pode ser lido e executado isoladamente. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
 
 A função principal (_main_) irá realizar a leitura do canal e imprimir os valores. Essa é uma característica interessante sobre canais, quando utilizados com o _range_, a iteração continuará até que o canal seja fechado.
 
@@ -569,6 +573,8 @@ No exemplo, um grupo de n trabalhadores aguarda a chegada de valores pelo canal 
 O grupo de trabalhadores é uma aplicação de [fan-out](#-fan-out): várias _goroutines_ leem do mesmo canal de entrada e cada valor é processado por exatamente uma delas. O que o grupo acrescenta à distribuição é o ciclo de vida dos trabalhadores, que voltam a ficar disponíveis ao terminar uma tarefa, e a coleta dos resultados em um canal de saída.
 
 O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ por tarefa e limitar apenas quantas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
+
+Execute o exemplo mais de uma vez: a ordem da saída muda a cada execução. Os trabalhadores concorrem pelos valores da entrada e é o escalonador quem decide qual deles roda a cada momento. É o primeiro ponto deste texto em que o não determinismo aparece, e ele é consequência direta de [concorrência não ser paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, não a ordem em que elas executam. Um programa concorrente correto não pode depender dessa ordem.
 
 Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram: cada trabalhador chama `wg.Done()` ao sair e uma _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída.
 
@@ -1110,7 +1116,7 @@ import (
 // `entrada`, descartando o mais antigo quando a janela enche. Uma única
 // goroutine é dona de todo o estado (a fila), então não há disputa entre
 // produtor e consumidor pelo buffer.
-func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
+func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 	defer close(saida)
 	var fila []int
 
@@ -1135,6 +1141,9 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 			if len(fila) == tamanho {
 				// Janela cheia, descarta o mais antigo e adiciona o novo
 				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
+				// fila[1:] não libera memória na hora: o array de apoio é
+				// mantido até o próximo append realocar. Para uma janela
+				// pequena isso é irrelevante, mas é bom saber.
 				fila = fila[1:]
 			}
 			fila = append(fila, valor)
@@ -1174,7 +1183,7 @@ func main() {
 	saida := make(chan int)
 	pronto := make(chan struct{})
 	go leitorLento(saida, pronto)
-	janelaDeslizante(saida, valores, 3)
+	janelaDeslizante(valores, saida, 3)
 	<-pronto
 	fmt.Println("Fim da execução.")
 }
@@ -1324,6 +1333,8 @@ Em Go esse mecanismo já vem embutido nos canais. Um envio em um canal sem buffe
 
 No exemplo, o produtor gera dez valores o mais rápido que consegue e o consumidor leva 200ms para processar cada um. A fila entre eles tem capacidade 3. Os primeiros valores entram de imediato, mas a partir do momento em que a fila enche, cada envio leva cerca de 200ms, que é justamente o ritmo do consumidor. O produtor não tem nenhum código para "esperar o consumidor": ele apenas escreve no canal.
 
+Para tornar a espera visível, o produtor faz antes uma tentativa com `select` e `default`, que é a forma de perguntar "dá para enviar agora?" sem bloquear. Se não der, ele avisa que a fila está cheia e faz o envio bloqueante normal. É o mesmo mecanismo da nota abaixo sobre descarte de carga, aqui usado apenas para observar, não para descartar: sem o `select`, o comportamento seria idêntico, só que silencioso.
+
 Repare no que não acontece: a memória não cresce, pois a fila tem um teto conhecido, e nenhum valor é perdido. O custo é que o produtor fica bloqueado, e isso precisa ser aceitável para quem está na ponta. Se quem produz é um _handler_ HTTP, por exemplo, bloquear pode significar segurar a conexão do cliente.
 
 > **Quando bloquear não é opção.** Se o produtor não pode esperar, a alternativa é rejeitar o trabalho quando a fila está cheia usando um `select` com `default`: o envio é tentado e, se não for possível de imediato, a chamada retorna um erro (um servidor devolveria algo como `503` ou `429`). Isso é descarte de carga (load shedding), e a diferença para a janela deslizante é quem sai perdendo: na janela é o valor mais antigo, no descarte de carga é o valor novo, que nem chega a entrar. Escolher entre bloquear, descartar o antigo ou rejeitar o novo depende do que o seu sistema pode tolerar. Para limitar a taxa ao longo do tempo, e não o tamanho da fila, veja o [sistema de ticket](#-sistema-de-ticket).
@@ -1343,13 +1354,17 @@ import (
 func produtor(saida chan<- int, n int) {
 	defer close(saida)
 	for i := 1; i <= n; i++ {
-		inicio := time.Now()
-		saida <- i
-		if espera := time.Since(inicio); espera > 10*time.Millisecond {
-			fmt.Printf("Produtor: buffer cheio, esperou %v para enviar %d\n", espera.Round(time.Millisecond), i)
-			continue
+		// select com default pergunta "dá para enviar agora?" sem bloquear.
+		// Aqui ele serve apenas para observar a fila cheia: nada é descartado,
+		// pois o default faz em seguida o envio bloqueante.
+		select {
+		case saida <- i:
+			fmt.Printf("Produtor: enviou %d\n", i)
+		default:
+			fmt.Printf("Produtor: fila cheia, esperando para enviar %d\n", i)
+			saida <- i
+			fmt.Printf("Produtor: enviou %d após esperar\n", i)
 		}
-		fmt.Printf("Produtor: enviou %d\n", i)
 	}
 }
 
@@ -1391,7 +1406,9 @@ Exemplo: Ao invés de salvar cada item no banco de dados assim que ele é recebi
 
 No exemplo, quando a terceira requisição (req) é enviada, o buffer percebe que ele está cheio e envia os dados para o canal de saída.
 
-Há um canal que permite enviar os dados antes que o buffer esteja cheio, chamado `descarga`.
+São três as formas de descarregar um lote: quando ele enche; quando o `intervalo` passa sem que ele tenha enchido (um `time.Ticker` dentro do `select`), para que um item não fique esperando indefinidamente por companhia; e sob demanda, pelo canal `descarga`. No exemplo, o item 6 é enviado sozinho e sai pelo intervalo de 100ms.
+
+Repare que, depois de enviar um lote, o código cria um novo _slice_ em vez de reaproveitar o anterior com `buf[:0]`. O consumidor pode ainda estar lendo o lote enviado, e reutilizar o mesmo _array_ de apoio sobrescreveria dados em uso. Parece uma otimização óbvia, mas quebraria o programa.
 
 Quando o canal de entrada é fechado, mas ainda há itens no buffer, o buffer é enviado para o canal de saída.
 
@@ -1400,6 +1417,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 )
 
 type req struct {
@@ -1422,11 +1440,29 @@ func processadorLotes(entrada <-chan []req) <-chan struct{} {
 	return pronto
 }
 
-func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) <-chan []req {
+// processamentoLotes agrupa os itens da entrada em lotes. Um lote é enviado
+// quando enche (`tamanhoLote`), quando passa o `intervalo` sem que ele tenha
+// enchido, ou quando chega um sinal manual pelo canal `descarga`.
+func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int, intervalo time.Duration) <-chan []req {
 	saida := make(chan []req)
 	go func() {
 		defer close(saida)
 		buf := make([]req, 0, tamanhoLote)
+
+		ticker := time.NewTicker(intervalo)
+		defer ticker.Stop()
+
+		// descarregar envia o lote atual, se houver algo nele
+		descarregar := func() {
+			if len(buf) == 0 {
+				return
+			}
+			saida <- buf
+			// Um novo slice é criado em vez de reaproveitar com buf[:0]:
+			// o consumidor pode ainda estar lendo o lote enviado, e reutilizar
+			// o mesmo array de apoio sobrescreveria dados em uso (aliasing).
+			buf = make([]req, 0, tamanhoLote)
+		}
 
 		for {
 			select {
@@ -1434,9 +1470,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 			case item, ok := <-entrada:
 				if !ok {
 					// envia o que tiver no buffer antes de sair
-					if len(buf) > 0 {
-						saida <- buf
-					}
+					descarregar()
 					// para o loop quando o canal de entrada for fechado
 					return
 				}
@@ -1444,16 +1478,16 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 				buf = append(buf, item)
 				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
-					saida <- buf
-					buf = make([]req, 0, tamanhoLote)
+					descarregar()
 				}
+
+			// Se o intervalo passou, descarrega o que tiver no buffer
+			case <-ticker.C:
+				descarregar()
 
 			// Se receber um sinal de descarga, descarrega o que tiver no buffer
 			case <-descarga:
-				if len(buf) > 0 {
-					saida <- buf
-					buf = make([]req, 0, tamanhoLote)
-				}
+				descarregar()
 			}
 		}
 	}()
@@ -1464,8 +1498,9 @@ func main() {
 	entrada := make(chan req)
 	descarga := make(chan struct{})
 
-	// inicia de forma concorrente o processamento em lotes
-	saida := processamentoLotes(entrada, descarga, 3)
+	// inicia de forma concorrente o processamento em lotes:
+	// lotes de 3 itens ou 100ms, o que acontecer primeiro
+	saida := processamentoLotes(entrada, descarga, 3, 100*time.Millisecond)
 	// O consumidor de lotes será iniciado de forma concorrente
 	pronto := processadorLotes(saida)
 
@@ -1479,10 +1514,15 @@ func main() {
 	entrada <- req{valor: 5}
 	descarga <- struct{}{}
 
+	// Envia um item e espera: o lote não enche, mas o intervalo
+	// de 100ms passa e ele é descarregado mesmo assim
+	entrada <- req{valor: 6}
+	time.Sleep(150 * time.Millisecond)
+
 	// Envia mais dois itens, não o suficiente para descarregar
 	// o lote.
-	entrada <- req{valor: 6}
 	entrada <- req{valor: 7}
+	entrada <- req{valor: 8}
 	// Eles serão processados mesmo assim.
 
 	close(entrada)

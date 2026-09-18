@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 )
 
 type req struct {
@@ -24,11 +25,29 @@ func processadorLotes(entrada <-chan []req) <-chan struct{} {
 	return pronto
 }
 
-func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int) <-chan []req {
+// processamentoLotes agrupa os itens da entrada em lotes. Um lote é enviado
+// quando enche (`tamanhoLote`), quando passa o `intervalo` sem que ele tenha
+// enchido, ou quando chega um sinal manual pelo canal `descarga`.
+func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLote int, intervalo time.Duration) <-chan []req {
 	saida := make(chan []req)
 	go func() {
 		defer close(saida)
 		buf := make([]req, 0, tamanhoLote)
+
+		ticker := time.NewTicker(intervalo)
+		defer ticker.Stop()
+
+		// descarregar envia o lote atual, se houver algo nele
+		descarregar := func() {
+			if len(buf) == 0 {
+				return
+			}
+			saida <- buf
+			// Um novo slice é criado em vez de reaproveitar com buf[:0]:
+			// o consumidor pode ainda estar lendo o lote enviado, e reutilizar
+			// o mesmo array de apoio sobrescreveria dados em uso (aliasing).
+			buf = make([]req, 0, tamanhoLote)
+		}
 
 		for {
 			select {
@@ -36,9 +55,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 			case item, ok := <-entrada:
 				if !ok {
 					// envia o que tiver no buffer antes de sair
-					if len(buf) > 0 {
-						saida <- buf
-					}
+					descarregar()
 					// para o loop quando o canal de entrada for fechado
 					return
 				}
@@ -46,16 +63,16 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 				buf = append(buf, item)
 				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
-					saida <- buf
-					buf = make([]req, 0, tamanhoLote)
+					descarregar()
 				}
+
+			// Se o intervalo passou, descarrega o que tiver no buffer
+			case <-ticker.C:
+				descarregar()
 
 			// Se receber um sinal de descarga, descarrega o que tiver no buffer
 			case <-descarga:
-				if len(buf) > 0 {
-					saida <- buf
-					buf = make([]req, 0, tamanhoLote)
-				}
+				descarregar()
 			}
 		}
 	}()
@@ -66,8 +83,9 @@ func main() {
 	entrada := make(chan req)
 	descarga := make(chan struct{})
 
-	// inicia de forma concorrente o processamento em lotes
-	saida := processamentoLotes(entrada, descarga, 3)
+	// inicia de forma concorrente o processamento em lotes:
+	// lotes de 3 itens ou 100ms, o que acontecer primeiro
+	saida := processamentoLotes(entrada, descarga, 3, 100*time.Millisecond)
 	// O consumidor de lotes será iniciado de forma concorrente
 	pronto := processadorLotes(saida)
 
@@ -81,10 +99,15 @@ func main() {
 	entrada <- req{valor: 5}
 	descarga <- struct{}{}
 
+	// Envia um item e espera: o lote não enche, mas o intervalo
+	// de 100ms passa e ele é descarregado mesmo assim
+	entrada <- req{valor: 6}
+	time.Sleep(150 * time.Millisecond)
+
 	// Envia mais dois itens, não o suficiente para descarregar
 	// o lote.
-	entrada <- req{valor: 6}
 	entrada <- req{valor: 7}
+	entrada <- req{valor: 8}
 	// Eles serão processados mesmo assim.
 
 	close(entrada)

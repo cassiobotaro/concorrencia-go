@@ -9,7 +9,7 @@ import (
 // `entrada`, descartando o mais antigo quando a janela enche. Uma única
 // goroutine é dona de todo o estado (a fila), então não há disputa entre
 // produtor e consumidor pelo buffer.
-func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
+func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 	defer close(saida)
 	var fila []int
 
@@ -34,6 +34,9 @@ func janelaDeslizante(saida chan<- int, entrada <-chan int, tamanho int) {
 			if len(fila) == tamanho {
 				// Janela cheia, descarta o mais antigo e adiciona o novo
 				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
+				// fila[1:] não libera memória na hora: o array de apoio é
+				// mantido até o próximo append realocar. Para uma janela
+				// pequena isso é irrelevante, mas é bom saber.
 				fila = fila[1:]
 			}
 			fila = append(fila, valor)
@@ -73,7 +76,7 @@ func main() {
 	saida := make(chan int)
 	pronto := make(chan struct{})
 	go leitorLento(saida, pronto)
-	janelaDeslizante(saida, valores, 3)
+	janelaDeslizante(valores, saida, 3)
 	<-pronto
 	fmt.Println("Fim da execução.")
 }
