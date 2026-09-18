@@ -1589,7 +1589,7 @@ func main() {
 }
 ```
 
-## 🔗 Daisy-chain
+## ⛓️ Daisy-chain
 
 **Também conhecido como:** corrente de _goroutines_, telefone sem fio.
 
