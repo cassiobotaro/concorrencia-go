@@ -28,6 +28,7 @@ Os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras lin
   - [🔗 Canais](#-canais)
   - [🗺️ Olá Mundo](#️-olá-mundo)
   - [🎛️ Select, timeout e quit channel](#️-select-timeout-e-quit-channel)
+  - [⏳ Esperando goroutines (WaitGroup)](#-esperando-goroutines-waitgroup)
 - [Parte 2 · Padrões básicos](#parte-2--padrões-básicos)
   - [🆕 Geradores](#-geradores)
   - [🚧 Trabalhador (worker)](#-trabalhador-worker)
@@ -200,6 +201,68 @@ func main() {
 }
 ```
 
+### ⏳ Esperando goroutines (WaitGroup)
+
+No [Olá Mundo](#️-olá-mundo), o programa principal esperou a _goroutine_ lendo de um canal. Quando o que se quer é só esperar várias _goroutines_ terminarem, sem receber nenhum dado delas, a ferramenta certa é o `sync.WaitGroup`.
+
+São duas chamadas. O `wg.Go` dispara a função em uma nova _goroutine_ e registra no `WaitGroup` que ela precisa terminar. O `wg.Wait()` bloqueia até que todas as _goroutines_ disparadas assim terminem.
+
+No exemplo, três tarefas com durações diferentes são disparadas de uma vez. A função principal só imprime a última linha depois que as três terminaram. Experimente comentar o `wg.Wait()` e veja o programa acabar antes de qualquer tarefa imprimir.
+
+O `wg.Go` existe desde o Go 1.25. Em código mais antigo você vai encontrar a forma equivalente, com `wg.Add(1)` antes de cada `go` e `defer wg.Done()` dentro da _goroutine_. O `wg.Go` faz as duas coisas de uma vez e evita os erros clássicos dessa forma, como esquecer o `Done` ou chamar o `Add` dentro da _goroutine_.
+
+Por que um `WaitGroup` e não um canal? Canais servem para orquestrar o fluxo de dados entre _goroutines_. Contar quantas _goroutines_ já terminaram é um problema menor, e para esses Rob Pike recomenda o pacote `sync`. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_", porque às vezes só é preciso um contador, e pede "_Always use the right tool for the job_". Nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_". Por isso, nos padrões a seguir, os canais transportam os dados e o `WaitGroup` apenas conta quem terminou.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// tarefa simula um trabalho que leva algum tempo.
+func tarefa(id int) {
+	time.Sleep(time.Duration(id) * 50 * time.Millisecond)
+	fmt.Printf("tarefa %d terminou\n", id)
+}
+
+func main() {
+	var wg sync.WaitGroup
+
+	// wg.Go dispara a função em uma nova goroutine e registra no
+	// WaitGroup que ela precisa terminar.
+	for i := range 3 {
+		wg.Go(func() {
+			tarefa(i + 1)
+		})
+	}
+
+	// Bloqueia até que todas as goroutines disparadas com wg.Go terminem.
+	// Sem esta linha o programa acabaria antes de as tarefas imprimirem.
+	wg.Wait()
+	fmt.Println("todas as tarefas terminaram")
+}
+```
+
+> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel. Cada tarefa envia um sinal ao terminar, e a função principal espera receber todos. Funciona, mas é um `WaitGroup` refeito à mão.
+>
+> ```go
+> terminar := make(chan struct{}, 3)
+>
+> for i := range 3 {
+> 	go func() {
+> 		tarefa(i + 1)
+> 		terminar <- struct{}{}
+> 	}()
+> }
+>
+> for range 3 {
+> 	<-terminar
+> }
+> ```
+
 ## Parte 2 · Padrões básicos
 
 Os blocos de montar. Cada padrão desta parte faz uma coisa só e usa apenas o que foi visto nos fundamentos. Os padrões das partes seguintes são combinações e variações destes.
@@ -348,7 +411,7 @@ Um fan-out distribui os valores de um canal de entrada entre várias _goroutines
 
 Não é preciso nenhum código para decidir quem recebe o quê, porque o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma delas.
 
-No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um `sync.WaitGroup` aguarda o término de todos, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), que é uma aplicação deste padrão.
+No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup) aguarda o término de todos. O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), mais adiante, é uma aplicação deste padrão.
 
 Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para todos os consumidores.
 
@@ -411,7 +474,7 @@ Um tee copia cada valor de um canal de entrada para todos os canais de saída, d
 
 No exemplo, uma sequência de números é gerada e copiada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
 
-O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saídas. Quando a entrada é fechada, ele fecha todas as saídas. Para aguardar o término dos trabalhadores, a função principal usa um `sync.WaitGroup`, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers).
+O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saídas. Quando a entrada é fechada, ele fecha todas as saídas. Para aguardar o término dos trabalhadores, a função principal usa um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup).
 
 Como os canais não têm buffer, o tee só passa para o próximo valor depois que todas as saídas receberam o atual. A consequência é que um consumidor lento atrasa todos os outros, e também o produtor. É a [contrapressão](#-contrapressão-backpressure) aplicada ao broadcast. Ninguém perde mensagem, mas todos andam no ritmo do mais lento.
 
@@ -537,7 +600,7 @@ A função fan-in pode receber vários canais de entrada através de [parâmetro
 
 No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
 
-Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um `sync.WaitGroup` para saber quando todos os canais de entrada foram processados. O motivo é o mesmo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers). Os canais transportam os dados, e o `WaitGroup` apenas conta quem terminou.
+Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup) para saber quando todos os canais de entrada foram processados.
 
 Repare que temos uma _goroutine_ que aguarda em `wg.Wait()` até que todas as entradas sejam consumidas, finalizando assim o canal de saída.
 
@@ -668,11 +731,7 @@ O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ po
 
 Execute o exemplo mais de uma vez e veja que a ordem da saída muda. Os trabalhadores concorrem pelos valores da entrada, e quem decide qual deles roda a cada momento é o escalonador. Esta é a primeira vez que o não determinismo aparece por aqui. Ele tem a ver com a ideia de que [concorrência não é paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, mas não diz em que ordem elas executam. Por isso um programa concorrente correto não pode depender dessa ordem.
 
-Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram. Cada trabalhador é iniciado com `wg.Go`, que dispara a função em uma nova _goroutine_ e avisa o `WaitGroup` quando ela termina. Uma outra _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída. Repare que o `trabalhador` nem sabe que o `WaitGroup` existe. Ele só processa valores, e quem o dispara é que cuida de esperar.
-
-O `wg.Go` existe desde o Go 1.25. Em código mais antigo você vai encontrar a forma equivalente, com `wg.Add(1)` antes de cada `go` e `defer wg.Done()` dentro da _goroutine_. O `wg.Go` faz as duas coisas de uma vez e evita os erros clássicos dessa forma, como esquecer o `Done` ou chamar o `Add` dentro da _goroutine_.
-
-Por que um `WaitGroup` e não um canal? Canais servem para orquestrar o fluxo de dados entre _goroutines_, e é isso que `entrada` e `saida` fazem aqui. Contar quantas _goroutines_ já terminaram é um problema menor, e para esses Rob Pike recomenda o pacote `sync`. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_", porque às vezes só é preciso um contador, e pede "_Always use the right tool for the job_". Nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_".
+Os trabalhadores são iniciados com `wg.Go`, e uma outra _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída, como visto em [esperando goroutines](#-esperando-goroutines-waitgroup). Repare que o `trabalhador` nem sabe que o `WaitGroup` existe. Ele só processa valores, e quem o dispara é que cuida de esperar.
 
 ```go
 package main
@@ -739,26 +798,6 @@ func main() {
 	}
 }
 ```
-
-> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel. Cada trabalhador envia um sinal ao terminar, e a _goroutine_ que fecha a saída espera receber todos. Funciona, mas é um `WaitGroup` refeito à mão.
->
-> ```go
-> terminar := make(chan struct{}, nTrabalhadores)
->
-> for i := range nTrabalhadores {
-> 	go func() {
-> 		trabalhador(i+1, entrada, saida)
-> 		terminar <- struct{}{}
-> 	}()
-> }
->
-> go func() {
-> 	for range nTrabalhadores {
-> 		<-terminar
-> 	}
-> 	close(saida)
-> }()
-> ```
 
 ### 📨 Requisição e resposta
 
