@@ -32,13 +32,13 @@ Os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras lin
 - [Parte 2 · Padrões básicos](#parte-2--padrões-básicos)
   - [🆕 Geradores](#-geradores)
   - [🚧 Trabalhador (worker)](#-trabalhador-worker)
-  - [🧑‍🏭 Pipeline](#-pipeline)
+  - [🧑‍🏭 Pipeline](#‍-pipeline)
   - [📣 Fan-out](#-fan-out)
   - [🔀 Tee (broadcast)](#-tee-broadcast)
     - [Tee com timeout](#tee-com-timeout)
   - [⚗️ Fan-in](#️-fan-in)
     - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
-  - [👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)](#️️-grupo-de-trabalhadores-pool-of-workers)
+  - [👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)](#‍️‍️-grupo-de-trabalhadores-pool-of-workers)
   - [📨 Requisição e resposta](#-requisição-e-resposta)
 - [Parte 3 · Encerrando goroutines](#parte-3--encerrando-goroutines)
   - [🚏 Canal de parada (quit channel)](#-canal-de-parada-quit-channel)
@@ -49,7 +49,7 @@ Os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras lin
   - [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
   - [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
   - [🎫 Sistema de ticket](#-sistema-de-ticket)
-  - [🧑‍🤝‍🧑 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
+  - [🧑‍🤝‍🧑 Processamento em lote (batch processing)](#‍‍-processamento-em-lote-batch-processing)
   - [🪟 Janela deslizante](#-janela-deslizante)
 - [Parte 5 · Padrões avançados](#parte-5--padrões-avançados)
   - [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
@@ -404,7 +404,7 @@ Um fan-out distribui os valores de um canal de entrada entre várias _goroutines
 
 Não é preciso nenhum código para decidir quem recebe o quê, porque o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma delas.
 
-No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup) aguarda o término de todos. O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), mais adiante, é uma aplicação deste padrão.
+No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup) aguarda o término de todos. O [grupo de trabalhadores](#‍️‍️-grupo-de-trabalhadores-pool-of-workers), mais adiante, é uma aplicação deste padrão.
 
 Execute o exemplo mais de uma vez e veja que a ordem da saída muda. Os trabalhadores concorrem pelos valores da entrada, e quem decide qual deles roda a cada momento é o escalonador. Esta é a primeira vez que o não determinismo aparece por aqui. Ele tem a ver com a ideia de que [concorrência não é paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, mas não diz em que ordem elas executam. Por isso um programa concorrente correto não pode depender dessa ordem.
 
@@ -1196,7 +1196,7 @@ func main() {
 
 Um canal com buffer de capacidade `n` funciona como um semáforo. Enviar ocupa uma vaga, e bloqueia quando todas estão ocupadas. Receber libera uma vaga. Com isso dá para limitar quantas _goroutines_ executam um trecho ao mesmo tempo sem criar um grupo fixo. Cada tarefa tem sua própria _goroutine_, mas só `n` avançam de cada vez. A técnica aparece com o nome de _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
 
-Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers) fixa o número de _goroutines_. O [sistema de ticket](#-sistema-de-ticket) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
+Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](#‍️‍️-grupo-de-trabalhadores-pool-of-workers) fixa o número de _goroutines_. O [sistema de ticket](#-sistema-de-ticket) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
 
 No exemplo, dez tarefas são disparadas de uma vez, mas o semáforo tem três vagas. A saída mostra que o número de tarefas ativas nunca passa de três. O contador atômico (`sync/atomic`) serve apenas para observar isso e não faz parte do padrão. O `sync.WaitGroup` aguarda o término de todas as tarefas.
 
