@@ -14,7 +14,7 @@ Outras influências:
 - A palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) de Rob Pike (Google I/O 2012), de onde vêm os geradores, o fan-in, os timeouts com `select` e o canal de parada.
 - Os [Go Proverbs](https://go-proverbs.github.io/), também de Rob Pike (Gopherfest 2015): "_Don't communicate by sharing memory, share memory by communicating_", "_Concurrency is not parallelism_", "_Channels orchestrate; mutexes serialize_" e "_Clear is better than clever_".
 
-Aqui serão apresentados alguns padrões de concorrência, porém sugiro também a leitura sobre [context](https://github.com/cassiobotaro/contexto), [select](https://gobyexample.com/select), [canais com buffer](https://gobyexample.com/channel-buffering) e outros mecanismos de controle de concorrência.
+O texto está dividido em partes, e cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--fundamentos) apresenta as peças da linguagem: canais, `select` e `WaitGroup`. A [Parte 2](#parte-2--padrões-básicos) traz os padrões básicos, que são os blocos de montar. A [Parte 3](#parte-3--encerrando-goroutines) trata de como encerrar _goroutines_. A [Parte 4](#parte-4--controlando-o-ritmo) trata de produtores e consumidores com velocidades diferentes. A [Parte 5](#parte-5--padrões-avançados) reúne padrões que combinam os anteriores. Para se aprofundar em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
 
 Os `fmt.Print` dentro das funções estão ali só para você enxergar o que acontece durante a execução. Eles não fazem parte dos padrões. Em código real seriam _logs_, ou nem existiriam.
 
@@ -77,6 +77,12 @@ Ler um canal fechado retorna um valor zero do tipo do canal.
 
 Escrever em um canal fechado causa um erro em tempo de execução (_panic_).
 
+**Fechar como sinal.** Fechar um canal é a forma usual em Go de comunicar um evento que acontece uma única vez, como "terminei" ou "pode parar". Funciona para qualquer número de leitores, porque todos os que estiverem lendo são desbloqueados ao mesmo tempo. Para isso costuma-se usar um `chan struct{}`, que não carrega dado nenhum. O primeiro uso aparece no [trabalhador](#-trabalhador-worker).
+
+**Canais com buffer.** `make(chan int, 3)` cria um canal que guarda até três valores. Enviar só bloqueia quando o buffer está cheio, e receber só bloqueia quando ele está vazio. O buffer tira a sincronização entre quem envia e quem recebe, e por isso pede mais cuidado. Os exemplos daqui usam canais sem buffer sempre que podem. O buffer só aparece quando ele é a própria ideia do padrão, como na [contrapressão](#-contrapressão-backpressure), no [semáforo](#-semáforo-paralelismo-limitado) e no [primeiro a responder](#-primeiro-a-responder).
+
+**Direção.** Na assinatura de uma função, um canal pode ser declarado só para leitura (`<-chan int`) ou só para escrita (`chan<- int`). Com isso o compilador impede que a função leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#-parada-com-confirmação), usado nos dois sentidos de propósito.
+
 ### 🗺️ Olá Mundo
 
 O [primeiro exemplo](./ola_mundo/ola_mundo.go) mostra como criar um canal, que será utilizado como ponte entre a aplicação principal e uma _goroutine_.
@@ -110,6 +116,8 @@ Quase todos os padrões das próximas partes dependem dele. Aqui vemos o uso mai
 
 - **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta. O prazo vale para cada mensagem e é renovado sempre que uma chega.
 - **Timeout para a conversa inteira.** É o mesmo `time.After`, mas criado uma única vez, fora do laço. O prazo vale para a conversa toda, não importa quantas mensagens cheguem.
+
+Dois outros recursos do `select` aparecem mais adiante. O `default`, que torna o `select` não bloqueante, é usado na [contrapressão](#-contrapressão-backpressure) e no [heartbeat](#-heartbeat). O outro é o **canal nil**. Um `select` nunca escolhe um `case` cujo canal é `nil`, então atribuir `nil` à variável do canal desliga aquele `case` enquanto o laço continua rodando. Esse truque aparece no [fan-in com select](#fan-in-com-uma-goroutine-e-select) e na [janela deslizante](#-janela-deslizante).
 
 O `tagarela` recebe um canal `quit`, que a função fecha ao sair para que o gerador também termine. Esse é o [canal de parada](#-canal-de-parada-quit-channel), assunto da Parte 3.
 
@@ -301,7 +309,7 @@ No exemplo, valores inteiros são enviados pela função principal (main) atrav�
 
 É possível criar vários trabalhadores para processarem um mesmo canal.
 
-Repare que o término é sinalizado com `close(pronto)`, e não com o envio de um valor. Fechar um canal é a forma usual em Go de comunicar um evento que acontece uma única vez, e funciona para qualquer número de leitores.
+Repare que o término é sinalizado com `close(pronto)`, e não com o envio de um valor. É o fechamento usado como sinal, visto em [canais](#-canais).
 
 ```go
 package main
@@ -343,7 +351,7 @@ Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal
 
 No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
 
-Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`). Com isso o compilador passa a impedir que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#-parada-com-confirmação), usado nos dois sentidos de propósito.
+Repare nas assinaturas. A função `dobro` recebe um `<-chan int` e devolve outro `<-chan int`. São os tipos direcionais vistos em [canais](#-canais), e aqui eles deixam claro quem lê e quem escreve em cada estágio.
 
 Os valores gerados por `sequenciaNumeros` são enviados para o canal de entrada do _pipeline_. A função principal recebe os valores transformados pelo canal de saída e os imprime.
 
@@ -397,6 +405,8 @@ Um fan-out distribui os valores de um canal de entrada entre várias _goroutines
 Não é preciso nenhum código para decidir quem recebe o quê, porque o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma delas.
 
 No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um [`sync.WaitGroup`](#-esperando-goroutines-waitgroup) aguarda o término de todos. O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), mais adiante, é uma aplicação deste padrão.
+
+Execute o exemplo mais de uma vez e veja que a ordem da saída muda. Os trabalhadores concorrem pelos valores da entrada, e quem decide qual deles roda a cada momento é o escalonador. Esta é a primeira vez que o não determinismo aparece por aqui. Ele tem a ver com a ideia de que [concorrência não é paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, mas não diz em que ordem elas executam. Por isso um programa concorrente correto não pode depender dessa ordem.
 
 Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para todos os consumidores.
 
@@ -664,7 +674,7 @@ func main() {
 
 Quando o número de entradas é fixo e conhecido, Rob Pike mostra na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) uma variante mais enxuta. Uma única _goroutine_ com um `select` repassa para a saída o valor da entrada que estiver pronta primeiro.
 
-A versão da palestra roda para sempre. [Aqui](./fan_in/fan_in_select.go) ela também trata o fechamento das entradas, com o mesmo truque do **canal nil** usado na [janela deslizante](#-janela-deslizante). Quando uma entrada é fechada, a variável vira `nil` e aquele `case` deixa de ser escolhido. Quando todas viram `nil`, o laço termina e a saída é fechada. Como só uma _goroutine_ escreve na saída, ela mesma fecha o canal, sem `WaitGroup`.
+A versão da palestra roda para sempre. [Aqui](./fan_in/fan_in_select.go) ela também trata o fechamento das entradas, com o truque do **canal nil** visto em [select](#️-select-e-timeouts). Quando uma entrada é fechada, a variável vira `nil` e aquele `case` deixa de ser escolhido. Quando todas viram `nil`, o laço termina e a saída é fechada. Como só uma _goroutine_ escreve na saída, ela mesma fecha o canal, sem `WaitGroup`.
 
 Quando usar cada uma? Se o número de canais é variável, como em um _slice_ ou em parâmetros múltiplos, use uma _goroutine_ por entrada, porque um `select` tem um número fixo de `case`s escrito no código. Se o número é fixo e pequeno, o `select` é mais direto. Basta uma _goroutine_, e não é preciso contar quem terminou.
 
@@ -714,7 +724,7 @@ O grupo de trabalhadores é uma aplicação de [fan-out](#-fan-out). Várias _go
 
 O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ por tarefa e limitar apenas quantas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
 
-Execute o exemplo mais de uma vez e veja que a ordem da saída muda. Os trabalhadores concorrem pelos valores da entrada, e quem decide qual deles roda a cada momento é o escalonador. Esta é a primeira vez que o não determinismo aparece por aqui. Ele tem a ver com a ideia de que [concorrência não é paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, mas não diz em que ordem elas executam. Por isso um programa concorrente correto não pode depender dessa ordem.
+Como no [fan-out](#-fan-out), a ordem da saída muda a cada execução.
 
 Os trabalhadores são iniciados com `wg.Go`, e uma outra _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída, como visto em [esperando goroutines](#-esperando-goroutines-waitgroup). Repare que o `trabalhador` nem sabe que o `WaitGroup` existe. Ele só processa valores, e quem o dispara é que cuida de esperar.
 
@@ -1111,7 +1121,7 @@ O que fazer quando quem produz e quem consome andam em velocidades diferentes. C
 
 **Também conhecido como:** _backpressure_, _bounded queue_ (fila limitada).
 
-Contrapressão (backpressure) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. É o oposto da janela deslizante. Lá o produtor segue livre e os valores antigos são descartados. Aqui nada é descartado, e quem espera é o produtor.
+Contrapressão (backpressure) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. Aqui nada é descartado, e quem espera é o produtor. A resposta oposta é a da [janela deslizante](#-janela-deslizante), no fim desta parte, em que o produtor segue livre e os valores antigos são descartados.
 
 Em Go esse mecanismo já vem embutido nos canais. Um envio em um canal sem buffer bloqueia até que alguém leia. Um envio em um canal com buffer bloqueia assim que o buffer enche. Ou seja, a capacidade do canal define a folga máxima entre produtor e consumidor, e o bloqueio propaga a lentidão do consumidor para trás, etapa por etapa, até chegar em quem gera os dados.
 
@@ -1478,13 +1488,13 @@ func main() {
 
 **Também conhecido como:** _drop-oldest buffer_. Evite tratar _ring buffer_ como sinônimo. O _ring buffer_ é uma forma de armazenar os dados, enquanto a janela deslizante é a regra de descarte, em que sai sempre o mais antigo.
 
-Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor lento trave um escritor rápido. Ela funciona deslizando sobre os dados. A ordem de entregas é garantida, porém dados antigos podem ser descartados se o consumidor for muito lento.
+Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor lento trave um escritor rápido. É a resposta oposta à da [contrapressão](#-contrapressão-backpressure): em vez de o produtor esperar, os dados mais velhos são descartados. Ela funciona deslizando sobre os dados. A ordem de entregas é garantida, porém dados antigos podem ser descartados se o consumidor for muito lento.
 
 No exemplo, uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo à medida que a janela desliza os valores antigos são descartados.
 
 Para fazer a janela deslizante, uma única _goroutine_ é dona de todo o estado (uma fila com tamanho máximo fixo) e usa um `select` para reagir ao que acontecer primeiro. Se chega um valor da entrada, ele entra na fila, e o mais antigo é descartado caso ela esteja cheia. Se o consumidor está pronto para receber, o primeiro da fila é enviado.
 
-O truque aqui é o **canal nil**. Um `select` nunca escolhe um `case` cujo canal é `nil`. Quando a fila está vazia, o canal de envio fica `nil` e o `case` de envio é desabilitado, pois não há o que enviar. Quando a entrada é fechada, a variável `entrada` passa a valer `nil` e o `case` de recebimento é desabilitado. Daí em diante só resta esvaziar a fila.
+O truque aqui é o **canal nil**, visto em [select](#️-select-e-timeouts). Como um `case` cujo canal é `nil` nunca é escolhido, dá para ligar e desligar cada `case` conforme o estado da fila. Quando a fila está vazia, o canal de envio fica `nil` e o `case` de envio é desabilitado, pois não há o que enviar. Quando a entrada é fechada, a variável `entrada` passa a valer `nil` e o `case` de recebimento é desabilitado. Daí em diante só resta esvaziar a fila.
 
 Como só uma _goroutine_ toca a fila, que é a técnica da [goroutine dona do estado](#-goroutine-dona-do-estado), não existe disputa entre produtor e consumidor pelo estado. Uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e tinha uma corrida sutil que podia travar o programa.
 
