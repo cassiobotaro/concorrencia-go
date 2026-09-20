@@ -7,7 +7,7 @@ import (
 
 // tagarela é um gerador que fala cada vez mais devagar: a pausa entre as
 // mensagens cresce 100ms a cada envio. Ele só para quando o canal quit é
-// fechado; ao sair, fecha o canal de saída.
+// fechado (veja o exemplo canal_de_parada).
 func tagarela(nome string, quit <-chan struct{}) <-chan string {
 	saida := make(chan string)
 	go func() {
@@ -64,24 +64,7 @@ func timeoutDaConversa() {
 	}
 }
 
-// canalDeParada lê três mensagens e manda o gerador parar fechando o canal
-// quit. Em seguida drena a saída até ela ser fechada, o que garante que a
-// goroutine do gerador terminou de fato.
-func canalDeParada() {
-	quit := make(chan struct{})
-	c := tagarela("Caio", quit)
-
-	for range 3 {
-		fmt.Println(<-c)
-	}
-	close(quit)
-	for range c {
-	}
-	fmt.Println("Caio parou.")
-}
-
 func main() {
 	timeoutPorMensagem()
 	timeoutDaConversa()
-	canalDeParada()
 }

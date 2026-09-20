@@ -15,8 +15,4 @@ func Example() {
 	// Beto 2
 	// Beto 3
 	// A conversa com o Beto acabou.
-	// Caio 0
-	// Caio 1
-	// Caio 2
-	// Caio parou.
 }
