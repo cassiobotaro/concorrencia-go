@@ -36,8 +36,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 
 // trabalhador consome os valores de uma das saídas do tee. O parâmetro
 // `demora` simula o tempo de processamento de cada valor.
-func trabalhador(id int, entrada <-chan int, demora time.Duration, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int, demora time.Duration) {
 	for valor := range entrada {
 		fmt.Println("id: ", id, " valor: ", valor)
 		time.Sleep(demora)
@@ -50,9 +49,8 @@ func main() {
 
 	// Aguarda o término dos trabalhadores
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go trabalhador(1, saida1, 0, &wg)
-	go trabalhador(2, saida2, 0, &wg)
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 0) })
 
 	// Copia a sequência de números para todos os canais de saída
 	tee(sequenciaNumeros(1, 10), saida1, saida2)
@@ -63,9 +61,8 @@ func main() {
 	saida1 = make(chan int)
 	saida2 = make(chan int)
 
-	wg.Add(2)
-	go trabalhador(1, saida1, 0, &wg)
-	go trabalhador(2, saida2, 250*time.Millisecond, &wg)
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
 
 	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
 	wg.Wait()

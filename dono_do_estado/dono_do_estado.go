@@ -42,14 +42,12 @@ func main() {
 	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
 	// os pedidos são atendidos um por vez pela goroutine dona.
 	var wg sync.WaitGroup
-	wg.Add(3)
 	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 1000 {
 				incrementar <- chave
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

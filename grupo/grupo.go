@@ -6,9 +6,7 @@ import (
 )
 
 // trabalhador processa valores recebidos do canal de entrada e envia resultados para o canal de saída.
-// Ele avisa o WaitGroup quando terminar.
-func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int, saida chan<- int) {
 	for valor := range entrada {
 		fmt.Printf("id: %d processou valor: %v\n", id, valor)
 		saida <- valor * 2
@@ -23,10 +21,12 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	// quantos trabalhadores ainda não terminaram.
 	var wg sync.WaitGroup
 
-	// Cria e inicia os trabalhadores
-	wg.Add(nTrabalhadores)
+	// Cria e inicia os trabalhadores. wg.Go dispara a função em uma nova
+	// goroutine e registra no WaitGroup que ela precisa terminar.
 	for i := range nTrabalhadores {
-		go trabalhador(i+1, entrada, saida, &wg)
+		wg.Go(func() {
+			trabalhador(i+1, entrada, saida)
+		})
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem

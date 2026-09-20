@@ -611,7 +611,9 @@ O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ po
 
 Execute o exemplo mais de uma vez e veja que a ordem da saída muda. Os trabalhadores concorrem pelos valores da entrada, e quem decide qual deles roda a cada momento é o escalonador. Esta é a primeira vez que o não determinismo aparece por aqui. Ele tem a ver com a ideia de que [concorrência não é paralelismo](https://go.dev/blog/waza-talk): o programa descreve computações independentes, mas não diz em que ordem elas executam. Por isso um programa concorrente correto não pode depender dessa ordem.
 
-Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram. Cada trabalhador chama `wg.Done()` ao sair, e uma _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída.
+Um `sync.WaitGroup` é utilizado para saber quando todos os trabalhadores terminaram. Cada trabalhador é iniciado com `wg.Go`, que dispara a função em uma nova _goroutine_ e avisa o `WaitGroup` quando ela termina. Uma outra _goroutine_ aguarda em `wg.Wait()` para então fechar o canal de saída. Repare que o `trabalhador` nem sabe que o `WaitGroup` existe. Ele só processa valores, e quem o dispara é que cuida de esperar.
+
+O `wg.Go` existe desde o Go 1.25. Em código mais antigo você vai encontrar a forma equivalente, com `wg.Add(1)` antes de cada `go` e `defer wg.Done()` dentro da _goroutine_. O `wg.Go` faz as duas coisas de uma vez e evita os erros clássicos dessa forma, como esquecer o `Done` ou chamar o `Add` dentro da _goroutine_.
 
 Por que um `WaitGroup` e não um canal? Canais servem para orquestrar o fluxo de dados entre _goroutines_, e é isso que `entrada` e `saida` fazem aqui. Contar quantas _goroutines_ já terminaram é um problema menor, e para esses Rob Pike recomenda o pacote `sync`. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_", porque às vezes só é preciso um contador, e pede "_Always use the right tool for the job_". Nos [Go Proverbs](https://go-proverbs.github.io/) a mesma ideia aparece como "_Channels orchestrate; mutexes serialize_".
 
@@ -624,9 +626,7 @@ import (
 )
 
 // trabalhador processa valores recebidos do canal de entrada e envia resultados para o canal de saída.
-// Ele avisa o WaitGroup quando terminar.
-func trabalhador(id int, entrada <-chan int, saida chan<- int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int, saida chan<- int) {
 	for valor := range entrada {
 		fmt.Printf("id: %d processou valor: %v\n", id, valor)
 		saida <- valor * 2
@@ -641,10 +641,12 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	// quantos trabalhadores ainda não terminaram.
 	var wg sync.WaitGroup
 
-	// Cria e inicia os trabalhadores
-	wg.Add(nTrabalhadores)
+	// Cria e inicia os trabalhadores. wg.Go dispara a função em uma nova
+	// goroutine e registra no WaitGroup que ela precisa terminar.
 	for i := range nTrabalhadores {
-		go trabalhador(i+1, entrada, saida, &wg)
+		wg.Go(func() {
+			trabalhador(i+1, entrada, saida)
+		})
 	}
 
 	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
@@ -681,7 +683,7 @@ func main() {
 }
 ```
 
-> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel. Cada trabalhador envia um sinal ao terminar, e a _goroutine_ que fecha a saída espera receber todos. Funciona, mas é um `WaitGroup` refeito à mão. No trecho abaixo, `trabalhador` é a mesma função sem o parâmetro `wg`.
+> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel. Cada trabalhador envia um sinal ao terminar, e a _goroutine_ que fecha a saída espera receber todos. Funciona, mas é um `WaitGroup` refeito à mão.
 >
 > ```go
 > terminar := make(chan struct{}, nTrabalhadores)
@@ -734,18 +736,15 @@ func executarTarefas(tarefas, limite int) {
 	var ativas atomic.Int32
 
 	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
-	wg.Add(tarefas)
 	for i := range tarefas {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)
 			defer func() { <-sem }() // libera a vaga ao terminar
 
 			fmt.Printf("tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
 			time.Sleep(100 * time.Millisecond)
 			ativas.Add(-1)
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -840,15 +839,13 @@ func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
 	var wg sync.WaitGroup
 
-	wg.Add(len(entradas))
 	for _, entrada := range entradas {
-		go func(entrada <-chan int) {
-			// Notifica que este canal foi processado
-			defer wg.Done()
+		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
+		wg.Go(func() {
 			for valor := range entrada {
 				saida <- valor
 			}
-		}(entrada)
+		})
 	}
 
 	// Quando todos os canais de entrada terminarem, fecha o canal de saída
@@ -963,8 +960,7 @@ import (
 // trabalhador lê do canal de entrada, que é compartilhado com os demais
 // trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
 // livre primeiro, recebe.
-func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int) {
 	for valor := range entrada {
 		fmt.Printf("id: %d processando valor: %v\n", id, valor)
 		// Simula um processamento demorado
@@ -977,9 +973,10 @@ func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
 func fanout(entrada <-chan int, n int) {
 	var wg sync.WaitGroup
 
-	wg.Add(n)
 	for i := range n {
-		go trabalhador(i+1, entrada, &wg)
+		wg.Go(func() {
+			trabalhador(i+1, entrada)
+		})
 	}
 	wg.Wait()
 }
@@ -1053,8 +1050,7 @@ func sequenciaNumeros(inicial, final int) <-chan int {
 
 // trabalhador consome os valores de uma das saídas do tee. O parâmetro
 // `demora` simula o tempo de processamento de cada valor.
-func trabalhador(id int, entrada <-chan int, demora time.Duration, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int, demora time.Duration) {
 	for valor := range entrada {
 		fmt.Println("id: ", id, " valor: ", valor)
 		time.Sleep(demora)
@@ -1067,9 +1063,8 @@ func main() {
 
 	// Aguarda o término dos trabalhadores
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go trabalhador(1, saida1, 0, &wg)
-	go trabalhador(2, saida2, 0, &wg)
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 0) })
 
 	// Copia a sequência de números para todos os canais de saída
 	tee(sequenciaNumeros(1, 10), saida1, saida2)
@@ -1080,9 +1075,8 @@ func main() {
 	saida1 = make(chan int)
 	saida2 = make(chan int)
 
-	wg.Add(2)
-	go trabalhador(1, saida1, 0, &wg)
-	go trabalhador(2, saida2, 250*time.Millisecond, &wg)
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
 
 	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
 	wg.Wait()
@@ -1282,14 +1276,12 @@ func main() {
 	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
 	// os pedidos são atendidos um por vez pela goroutine dona.
 	var wg sync.WaitGroup
-	wg.Add(3)
 	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 1000 {
 				incrementar <- chave
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -1352,14 +1344,12 @@ func comMutex() {
 	c := contadorMutex{contagem: make(map[string]int)}
 
 	var wg sync.WaitGroup
-	wg.Add(3)
 	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 1000 {
 				c.incrementar(chave)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

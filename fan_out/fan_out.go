@@ -9,8 +9,7 @@ import (
 // trabalhador lê do canal de entrada, que é compartilhado com os demais
 // trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
 // livre primeiro, recebe.
-func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func trabalhador(id int, entrada <-chan int) {
 	for valor := range entrada {
 		fmt.Printf("id: %d processando valor: %v\n", id, valor)
 		// Simula um processamento demorado
@@ -23,9 +22,10 @@ func trabalhador(id int, entrada <-chan int, wg *sync.WaitGroup) {
 func fanout(entrada <-chan int, n int) {
 	var wg sync.WaitGroup
 
-	wg.Add(n)
 	for i := range n {
-		go trabalhador(i+1, entrada, &wg)
+		wg.Go(func() {
+			trabalhador(i+1, entrada)
+		})
 	}
 	wg.Wait()
 }

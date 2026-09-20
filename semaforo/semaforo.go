@@ -20,18 +20,15 @@ func executarTarefas(tarefas, limite int) {
 	var ativas atomic.Int32
 
 	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
-	wg.Add(tarefas)
 	for i := range tarefas {
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)
 			defer func() { <-sem }() // libera a vaga ao terminar
 
 			fmt.Printf("tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
 			time.Sleep(100 * time.Millisecond)
 			ativas.Add(-1)
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -29,14 +29,12 @@ func comMutex() {
 	c := contadorMutex{contagem: make(map[string]int)}
 
 	var wg sync.WaitGroup
-	wg.Add(3)
 	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 1000 {
 				c.incrementar(chave)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

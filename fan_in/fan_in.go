@@ -11,15 +11,13 @@ func fanin(entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
 	var wg sync.WaitGroup
 
-	wg.Add(len(entradas))
 	for _, entrada := range entradas {
-		go func(entrada <-chan int) {
-			// Notifica que este canal foi processado
-			defer wg.Done()
+		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
+		wg.Go(func() {
 			for valor := range entrada {
 				saida <- valor
 			}
-		}(entrada)
+		})
 	}
 
 	// Quando todos os canais de entrada terminarem, fecha o canal de saída
