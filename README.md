@@ -24,34 +24,44 @@ Os mesmos padrões aparecem com nomes diferentes em livros, artigos e outras lin
 
 ## 📑 Sumário
 
-- [🔗 Canais](#-canais)
-- [🗺️ Olá Mundo](#️-olá-mundo)
-- [🆕 Geradores](#-geradores)
-- [🎛️ Select, timeout e quit channel](#️-select-timeout-e-quit-channel)
-- [🏁 Primeiro a responder](#-primeiro-a-responder)
-- [🛑 Cancelamento e vazamento de goroutines](#-cancelamento-e-vazamento-de-goroutines)
-  - [Parada com confirmação](#parada-com-confirmação)
-  - [Combinar sinais de parada (or-channel)](#combinar-sinais-de-parada-or-channel)
-- [🚧 Trabalhador (worker)](#-trabalhador-worker)
-- [📨 Requisição e resposta](#-requisição-e-resposta)
-- [👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)](#️️-grupo-de-trabalhadores-pool-of-workers)
-- [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
-- [🧑‍🏭 Pipeline](#-pipeline)
-- [⚗️ Fan-in](#️-fan-in)
-  - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
-- [📣 Fan-out](#-fan-out)
-- [🔀 Tee (broadcast)](#-tee-broadcast)
-  - [Tee com timeout](#tee-com-timeout)
-- [🪟 Janela deslizante](#-janela-deslizante)
-- [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
-  - [E com mutex?](#e-com-mutex)
-- [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
-- [🧑‍🤝‍🧑 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
-- [🎫 Sistema de ticket](#-sistema-de-ticket)
-- [⛓️ Daisy-chain](#️-daisy-chain)
-- [💓 Heartbeat](#-heartbeat)
+- [Parte 1 · Fundamentos](#parte-1--fundamentos)
+  - [🔗 Canais](#-canais)
+  - [🗺️ Olá Mundo](#️-olá-mundo)
+  - [🎛️ Select, timeout e quit channel](#️-select-timeout-e-quit-channel)
+- [Parte 2 · Padrões básicos](#parte-2--padrões-básicos)
+  - [🆕 Geradores](#-geradores)
+  - [🚧 Trabalhador (worker)](#-trabalhador-worker)
+  - [🧑‍🏭 Pipeline](#-pipeline)
+  - [📣 Fan-out](#-fan-out)
+  - [🔀 Tee (broadcast)](#-tee-broadcast)
+    - [Tee com timeout](#tee-com-timeout)
+  - [⚗️ Fan-in](#️-fan-in)
+    - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
+  - [👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)](#️️-grupo-de-trabalhadores-pool-of-workers)
+  - [📨 Requisição e resposta](#-requisição-e-resposta)
+- [Parte 3 · Encerrando goroutines](#parte-3--encerrando-goroutines)
+  - [🛑 Cancelamento e vazamento de goroutines](#-cancelamento-e-vazamento-de-goroutines)
+  - [🤝 Parada com confirmação](#-parada-com-confirmação)
+  - [🧩 Combinar sinais de parada (or-channel)](#-combinar-sinais-de-parada-or-channel)
+- [Parte 4 · Controlando o ritmo](#parte-4--controlando-o-ritmo)
+  - [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
+  - [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
+  - [🎫 Sistema de ticket](#-sistema-de-ticket)
+  - [🧑‍🤝‍🧑 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
+  - [🪟 Janela deslizante](#-janela-deslizante)
+- [Parte 5 · Padrões avançados](#parte-5--padrões-avançados)
+  - [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
+    - [E com mutex?](#e-com-mutex)
+  - [🏁 Primeiro a responder](#-primeiro-a-responder)
+  - [💓 Heartbeat](#-heartbeat)
+- [Curiosidade](#curiosidade)
+  - [⛓️ Daisy-chain](#️-daisy-chain)
 
-## 🔗 Canais
+## Parte 1 · Fundamentos
+
+Antes dos padrões, as peças da linguagem que todos eles usam. Esta parte não apresenta nenhum padrão. Ela explica os canais, o `select` e a forma de esperar _goroutines_ terminarem. Se você já conhece essas peças, pode ir direto para a Parte 2.
+
+### 🔗 Canais
 
 Canais (channels) são uma estrutura primitiva na linguagem, e você pode utilizá-los para envio e recebimento de valores entre rotinas (_goroutines_). Os valores podem ser de qualquer tipo, inclusive do tipo canal.
 
@@ -65,7 +75,7 @@ Ler um canal fechado retorna um valor zero do tipo do canal.
 
 Escrever em um canal fechado causa um erro em tempo de execução (_panic_).
 
-## 🗺️ Olá Mundo
+### 🗺️ Olá Mundo
 
 O [primeiro exemplo](./ola_mundo/ola_mundo.go) mostra como criar um canal, que será utilizado como ponte entre a aplicação principal e uma _goroutine_.
 
@@ -90,46 +100,7 @@ func main() {
 }
 ```
 
-## 🆕 Geradores
-
-**Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da seção de [contrapressão](#-contrapressão-backpressure).
-
-Geradores são funções que iniciam uma _goroutine_ para escrever uma lista de valores em um canal que é retornado para quem acionou a função.
-
-No exemplo, uma sequência de números inteiros é gerada e enviada para um canal.
-
-A função `sequenciaNumeros` reaparece em vários exemplos. Ela é copiada de propósito, para que cada arquivo possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
-
-A função principal (_main_) irá realizar a leitura do canal e imprimir os valores. Essa é uma característica interessante sobre canais, quando utilizados com o _range_, a iteração continuará até que o canal seja fechado.
-
-> **Atenção:** este gerador não é cancelável. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
-
-```go
-package main
-
-import "fmt"
-
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
-	}()
-	return saida
-}
-
-func main() {
-	valores := sequenciaNumeros(1, 1000)
-	for valor := range valores {
-		fmt.Printf("valor: %v\n", valor)
-	}
-}
-```
-
-## 🎛️ Select, timeout e quit channel
+### 🎛️ Select, timeout e quit channel
 
 O `select` é uma estrutura de controle feita para concorrência. Ele parece um `switch`, mas cada `case` é uma comunicação, ou seja, um envio ou um recebimento em um canal. O `select` bloqueia até que alguma das comunicações possa prosseguir. Se várias puderem ao mesmo tempo, ele escolhe uma de forma pseudoaleatória. Se houver um `default`, ele não bloqueia. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Rob Pike diz que o `select` é a razão de canais e _goroutines_ fazerem parte da linguagem, em vez de serem uma biblioteca.
 
@@ -137,7 +108,7 @@ Vários exemplos mais adiante dependem dele. O [primeiro a responder](#-primeiro
 
 - **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta. O prazo vale para cada mensagem e é renovado sempre que uma chega.
 - **Timeout para a conversa inteira.** É o mesmo `time.After`, mas criado uma única vez, fora do laço. O prazo vale para a conversa toda, não importa quantas mensagens cheguem.
-- **Canal de parada (quit channel).** O gerador faz cada envio disputar com um canal `quit`. Quando quem consome não quer mais valores, fecha o `quit` e o gerador termina em vez de ficar bloqueado para sempre. Repare que o gerador fecha a saída ao sair. A função `canalDeParada` lê a saída até ela ser fechada, e assim tem certeza de que o gerador terminou. A variante em que o gerador confirma a parada pelo próprio `quit` está em [cancelamento](#parada-com-confirmação).
+- **Canal de parada (quit channel).** O gerador faz cada envio disputar com um canal `quit`. Quando quem consome não quer mais valores, fecha o `quit` e o gerador termina em vez de ficar bloqueado para sempre. Repare que o gerador fecha a saída ao sair. A função `canalDeParada` lê a saída até ela ser fechada, e assim tem certeza de que o gerador terminou. A variante em que o gerador confirma a parada pelo próprio `quit` está em [cancelamento](#-parada-com-confirmação).
 
 ```go
 package main
@@ -229,280 +200,50 @@ func main() {
 }
 ```
 
-## 🏁 Primeiro a responder
+## Parte 2 · Padrões básicos
 
-**Também conhecido como:** _hedged request_, réplicas, `First` (o nome da função na palestra de Pike).
+Os blocos de montar. Cada padrão desta parte faz uma coisa só e usa apenas o que foi visto nos fundamentos. Os padrões das partes seguintes são combinações e variações destes.
 
-Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com o timeout visto em [select](#️-select-timeout-e-quit-channel), o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
+### 🆕 Geradores
 
-Repare no canal com buffer de tamanho `len(replicas)`. A função lê uma única resposta e retorna, mas as outras _goroutines_ ainda vão tentar enviar as suas. Com um canal sem buffer elas ficariam bloqueadas no envio para sempre, pois ninguém mais vai ler. Isso é um vazamento de _goroutines_, assunto da seção de [cancelamento](#-cancelamento-e-vazamento-de-goroutines). Com uma vaga por réplica, cada perdedora deposita sua resposta e termina. Este é um bom exemplo de buffer usado para não vazar.
+**Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da seção de [contrapressão](#-contrapressão-backpressure).
 
-No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um timeout de 20ms. O canal `resposta` tem buffer 1 pelo mesmo motivo.
+Geradores são funções que iniciam uma _goroutine_ para escrever uma lista de valores em um canal que é retornado para quem acionou a função.
 
-```go
-package main
+No exemplo, uma sequência de números inteiros é gerada e enviada para um canal.
 
-import (
-	"fmt"
-	"math/rand/v2"
-	"time"
-)
+A função `sequenciaNumeros` reaparece em vários exemplos. Ela é copiada de propósito, para que cada arquivo possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
 
-// replica simula um servidor cuja latência varia a cada chamada.
-func replica(nome string) func(string) string {
-	return func(consulta string) string {
-		time.Sleep(rand.N(100 * time.Millisecond))
-		return fmt.Sprintf("%s respondeu a %q", nome, consulta)
-	}
-}
+A função principal (_main_) irá realizar a leitura do canal e imprimir os valores. Essa é uma característica interessante sobre canais, quando utilizados com o _range_, a iteração continuará até que o canal seja fechado.
 
-// primeiro envia a mesma consulta a todas as réplicas e devolve a primeira
-// resposta que chegar.
-func primeiro(consulta string, replicas ...func(string) string) string {
-	// O buffer tem uma vaga por réplica: as respostas perdedoras são
-	// depositadas sem bloquear. Sem ele, essas goroutines ficariam presas
-	// no envio para sempre, pois ninguém mais vai ler do canal.
-	c := make(chan string, len(replicas))
-	for _, r := range replicas {
-		go func() { c <- r(consulta) }()
-	}
-	return <-c
-}
-
-func main() {
-	replicas := []func(string) string{
-		replica("réplica 1"),
-		replica("réplica 2"),
-		replica("réplica 3"),
-	}
-
-	fmt.Println(primeiro("golang", replicas...))
-
-	// Combinado com timeout: usa a resposta mais rápida, desde que chegue
-	// em até 20ms. O buffer de tamanho 1 tem o mesmo papel: se o timeout
-	// vencer, a goroutine ainda consegue depositar a resposta e terminar.
-	resposta := make(chan string, 1)
-	go func() { resposta <- primeiro("csp", replicas...) }()
-
-	select {
-	case r := <-resposta:
-		fmt.Println(r)
-	case <-time.After(20 * time.Millisecond):
-		fmt.Println("tempo esgotado: nenhuma réplica respondeu em 20ms")
-	}
-}
-```
-
-## 🛑 Cancelamento e vazamento de goroutines
-
-Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina. Dizemos que ela vaza. O coletor de lixo não recolhe _goroutines_, então a memória e os recursos que ela segura ficam presos até o fim do programa. Em um programa curto isso passa despercebido. Em um servidor que roda por meses, é um vazamento de memória.
-
-O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para. A _goroutine_ fica presa no envio do quarto valor. O programa mostra isso comparando `runtime.NumGoroutine()` antes e depois.
-
-A solução é a mesma do canal de parada visto em [select](#️-select-timeout-e-quit-channel). Cada envio disputa, em um `select`, com um sinal de cancelamento. Só que, em vez de um canal `quit` próprio, o costume em Go é receber um `context.Context` e observar `ctx.Done()`, um canal que é fechado quando o contexto é cancelado. A vantagem é que o mesmo contexto atravessa várias funções e etapas de um _pipeline_, carrega prazos (`context.WithTimeout`) e cancela todo mundo de uma vez. Para se aprofundar, veja o repositório sobre [context](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
-
-Na versão cancelável, a função principal lê três valores e chama `cancel()`. Sem essa chamada, a _goroutine_ ficaria presa exatamente como a primeira.
+> **Atenção:** este gerador não é cancelável. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
 
 ```go
 package main
 
-import (
-	"context"
-	"fmt"
-	"runtime"
-)
+import "fmt"
 
-// sequenciaNumeros é o gerador usado nos outros exemplos. Ele não é
-// cancelável: se o consumidor parar de ler antes do fim, o envio bloqueia
-// para sempre e a goroutine vaza.
 func sequenciaNumeros(inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		for i := inicial; i <= final; i++ {
 			saida <- i
 		}
+		// após gerar todos os valores, fecha o canal
 		close(saida)
 	}()
 	return saida
 }
 
-// sequenciaNumerosCancelavel faz cada envio disputar com ctx.Done():
-// se o contexto for cancelado, a goroutine desiste do envio e termina.
-func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		defer close(saida)
-		for i := inicial; i <= final; i++ {
-			select {
-			case saida <- i:
-			case <-ctx.Done():
-				fmt.Println("gerador: cancelado, encerrando")
-				return
-			}
-		}
-	}()
-	return saida
-}
-
 func main() {
-	antes := runtime.NumGoroutine()
-
-	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
 	valores := sequenciaNumeros(1, 1000)
-	for range 3 {
-		fmt.Printf("valor: %v\n", <-valores)
-	}
-	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
-	// em `saida <- 4` e continuará assim até o programa terminar.
-	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-antes)
-
-	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancelaveis := sequenciaNumerosCancelavel(ctx, 1, 1000)
-	for range 3 {
-		fmt.Printf("valor: %v\n", <-cancelaveis)
-	}
-	// Sem esta chamada a goroutine ficaria presa, como a anterior.
-	cancel()
-	// O gerador fecha o canal ao sair: drenar até o fechamento garante que
-	// ele terminou de fato.
-	for range cancelaveis {
-	}
-	fmt.Println("gerador cancelável encerrado")
-
-	// Parada com confirmação (veja quit_confirmacao.go)
-	quitComConfirmacao()
-	// Vários sinais de parada combinados em um só (veja qualquer.go)
-	combinarSinais()
-}
-```
-
-### Parada com confirmação
-
-**Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
-
-Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o próprio canal `quit`. Quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
-
-A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta). O método `Close` envia um canal de resposta por um `chan chan error` e espera nele. A _goroutine_ faz a limpeza e responde com o erro, se houver. Prefira essa forma quando a confirmação precisa carregar alguma informação.
-
-Com `context`, o equivalente é chamar `cancel()` e depois esperar um canal `pronto`, que a _goroutine_ fecha ao terminar a limpeza. Isso é necessário porque o `ctx` só leva o sinal em um sentido. Foi o que o exemplo anterior fez ao ler o canal do gerador até ele ser fechado.
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-)
-
-// tagarelaComConfirmacao envia mensagens até receber algo no canal quit.
-// Antes de sair faz a limpeza e confirma no MESMO canal que terminou,
-// por isso o canal é bidirecional.
-func tagarelaComConfirmacao(nome string, quit chan string) <-chan string {
-	saida := make(chan string)
-	go func() {
-		for i := 0; ; i++ {
-			select {
-			case saida <- fmt.Sprintf("%s %d", nome, i):
-			case <-quit:
-				limpeza()
-				quit <- "parei"
-				return
-			}
-		}
-	}()
-	return saida
-}
-
-// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
-func limpeza() {
-	fmt.Println("gerador: liberando recursos...")
-	time.Sleep(100 * time.Millisecond)
-}
-
-func quitComConfirmacao() {
-	quit := make(chan string)
-	c := tagarelaComConfirmacao("Duda", quit)
-	for range 3 {
-		fmt.Println(<-c)
-	}
-	quit <- "pare"
-	// Só seguimos em frente depois que o gerador confirmar que terminou
-	fmt.Println("gerador:", <-quit)
-}
-```
-
-### Combinar sinais de parada (or-channel)
-
-**Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_, do mesmo livro citado abaixo, que é outra técnica. Ele embrulha a leitura de um canal para que ela também respeite um sinal de parada.
-
-Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em vez de um `select` com um `case` por origem em cada _goroutine_, a função [`qualquer`](./cancelamento/qualquer.go) combina os canais em um só, que é fechado quando o primeiro deles fechar.
-
-A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Ela toma dois cuidados. O primeiro é o `sync.Once`, que garante um único `close` mesmo que dois sinais cheguem juntos, já que fechar um canal duas vezes causa _panic_. O segundo é que cada _goroutine_ também observa a própria saída. Assim, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem.
-
-Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_".
-
-Se todos os sinais são contextos, prefira derivar um do outro, como em `context.WithTimeout(ctxRequisicao, ...)`. O contexto filho já é cancelado quando o pai é. Combinar canais vale a pena quando as origens são independentes.
-
-De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), que fecha um canal `quit` para encerrar as _goroutines_ do seu `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"sync"
-	"time"
-)
-
-// qualquer combina vários sinais de parada em um só: o canal devolvido é
-// fechado assim que o primeiro dos canais recebidos for fechado.
-func qualquer(canais ...<-chan struct{}) <-chan struct{} {
-	saida := make(chan struct{})
-	// Mais de um sinal pode chegar ao mesmo tempo, e fechar um canal duas
-	// vezes causa panic: o sync.Once garante um único close.
-	var once sync.Once
-	for _, c := range canais {
-		go func() {
-			select {
-			case <-c:
-				once.Do(func() { close(saida) })
-			case <-saida:
-				// Outro sinal chegou primeiro: esta goroutine termina
-				// em vez de ficar presa esperando `c` para sempre.
-			}
-		}()
-	}
-	return saida
-}
-
-func combinarSinais() {
-	// Três origens independentes para o sinal de parada
-	ctxRequisicao, cancelarRequisicao := context.WithCancel(context.Background())
-	defer cancelarRequisicao()
-	ctxPrazo, cancelarPrazo := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancelarPrazo()
-	desligar := make(chan struct{}) // seria fechado ao receber um sinal do sistema operacional
-
-	parar := qualquer(ctxRequisicao.Done(), ctxPrazo.Done(), desligar)
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		// Um único case de parada, não importa quantas origens existam
-		select {
-		case <-ticker.C:
-			fmt.Println("trabalhando...")
-		case <-parar:
-			fmt.Println("um dos sinais de parada chegou (aqui, o prazo de 250ms)")
-			return
-		}
+	for valor := range valores {
+		fmt.Printf("valor: %v\n", valor)
 	}
 }
 ```
 
-## 🚧 Trabalhador (worker)
+### 🚧 Trabalhador (worker)
 
 **Também conhecido como:** consumidor, _sink_. O segundo só vale quando o trabalhador é o último estágio, isto é, quando não repassa nada adiante.
 
@@ -546,58 +287,374 @@ func main() {
 }
 ```
 
-## 📨 Requisição e resposta
+### 🧑‍🏭 Pipeline
 
-**Também conhecido como:** canal de resposta, _RPC_ interno, _restoring sequencing_ (o nome que Rob Pike dá a um uso específico da ideia, comentado abaixo).
+**Também conhecido como:** cadeia de estágios. Cada função do _pipeline_ é um _estágio_ (_stage_).
 
-Canais são valores como qualquer outro, então uma mensagem pode carregar um canal. Quem envia uma requisição inclui nela o canal pelo qual quer receber a resposta e fica bloqueado lendo desse canal. Quem atende processa e responde no canal que veio na mensagem. Nenhum estado é compartilhado, pois pedido e resposta viajam por canais. É assim que se faz uma _goroutine_ funcionar como um serviço, e a ideia reaparece na [goroutine dona do estado](#-goroutine-dona-do-estado).
+Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal, normalmente após realizar alguma transformação no valor.
 
-No exemplo, a função principal envia cinco requisições ao `servico` e espera cada resposta antes de enviar a próxima. O campo `resposta` é declarado como `chan<- int`, então o serviço só pode escrever nele.
+No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
 
-Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike usa a mesma ideia para "restaurar a sequência" de um fan-in. Cada mensagem carrega um canal `wait`, e quem produziu só envia a próxima depois que o leitor avisa, por esse canal, que terminou de processar a anterior.
+Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`). Com isso o compilador passa a impedir que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#-parada-com-confirmação), usado nos dois sentidos de propósito.
+
+Os valores gerados por `sequenciaNumeros` são enviados para o canal de entrada do _pipeline_. A função principal recebe os valores transformados pelo canal de saída e os imprime.
+
+Vários pipelines poderiam ser encadeados para realizar múltiplas transformações.
+
+> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
 
 ```go
 package main
 
 import "fmt"
 
-// requisicao carrega, além do valor, o canal pelo qual quem pediu quer
-// receber a resposta. O serviço só precisa escrever nele, por isso chan<-.
-type requisicao struct {
-	valor    int
-	resposta chan<- int
+func dobro(entrada <-chan int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for valor := range entrada {
+			saida <- valor * 2
+		}
+		// Após ter terminado de transformar os valores de entrada,
+		//  fecha o canal de saida
+		close(saida)
+	}()
+	return saida
 }
 
-// servico atende uma requisição por vez e responde no canal que veio
-// dentro da própria mensagem.
-func servico(entrada <-chan requisicao) {
-	for req := range entrada {
-		req.resposta <- req.valor * 2
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+func main() {
+	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
+		fmt.Printf("valor: %v\n", valor)
+	}
+}
+```
+
+### 📣 Fan-out
+
+**Também conhecido como:** distribuição, _work distribution_.
+
+Um fan-out distribui os valores de um canal de entrada entre várias _goroutines_. O artigo sobre [_pipelines_](https://go.dev/blog/pipelines) define assim: múltiplas funções lendo do mesmo canal até que ele seja fechado. Cada valor é processado por exatamente uma delas, o que permite dividir um trabalho demorado entre vários trabalhadores.
+
+Não é preciso nenhum código para decidir quem recebe o quê, porque o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma delas.
+
+No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um `sync.WaitGroup` aguarda o término de todos, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), que é uma aplicação deste padrão.
+
+Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para todos os consumidores.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// trabalhador lê do canal de entrada, que é compartilhado com os demais
+// trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
+// livre primeiro, recebe.
+func trabalhador(id int, entrada <-chan int) {
+	for valor := range entrada {
+		fmt.Printf("id: %d processando valor: %v\n", id, valor)
+		// Simula um processamento demorado
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// fanout distribui os valores de um único canal de entrada entre n
+// trabalhadores e só retorna quando todos terminarem.
+func fanout(entrada <-chan int, n int) {
+	var wg sync.WaitGroup
+
+	for i := range n {
+		wg.Go(func() {
+			trabalhador(i+1, entrada)
+		})
+	}
+	wg.Wait()
+}
+
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+func main() {
+	// Três trabalhadores dividem entre si os dez valores da sequência
+	fanout(sequenciaNumeros(1, 10), 3)
+}
+```
+
+### 🔀 Tee (broadcast)
+
+**Também conhecido como:** _broadcast_, _publish/subscribe_ em memória. O segundo é aproximado: em um _pub/sub_ os assinantes costumam entrar e sair dinamicamente, enquanto o tee tem um conjunto fixo de saídas.
+
+Um tee copia cada valor de um canal de entrada para todos os canais de saída, de modo que todos os consumidores veem todos os valores. O nome vem do comando `tee` do Unix, que duplica o que recebe. É o oposto do [fan-out](#-fan-out), em que cada valor vai para um único consumidor.
+
+No exemplo, uma sequência de números é gerada e copiada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
+
+O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saídas. Quando a entrada é fechada, ele fecha todas as saídas. Para aguardar o término dos trabalhadores, a função principal usa um `sync.WaitGroup`, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers).
+
+Como os canais não têm buffer, o tee só passa para o próximo valor depois que todas as saídas receberam o atual. A consequência é que um consumidor lento atrasa todos os outros, e também o produtor. É a [contrapressão](#-contrapressão-backpressure) aplicada ao broadcast. Ninguém perde mensagem, mas todos andam no ritmo do mais lento.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+// tee copia cada valor da entrada para todas as saídas: todos os consumidores
+// veem todos os valores. O envio é sequencial e sem buffer, então o tee só
+// avança quando todas as saídas receberam o valor: um consumidor lento
+// atrasa todos os outros.
+func tee(entrada <-chan int, saidas ...chan<- int) {
+	for valor := range entrada {
+		for _, saida := range saidas {
+			saida <- valor
+		}
+	}
+	// Como a entrada foi consumida, fecha os canais de saída
+	for _, saida := range saidas {
+		close(saida)
+	}
+}
+
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		// após gerar todos os valores, fecha o canal
+		close(saida)
+	}()
+	return saida
+}
+
+// trabalhador consome os valores de uma das saídas do tee. O parâmetro
+// `demora` simula o tempo de processamento de cada valor.
+func trabalhador(id int, entrada <-chan int, demora time.Duration) {
+	for valor := range entrada {
+		fmt.Println("id: ", id, " valor: ", valor)
+		time.Sleep(demora)
 	}
 }
 
 func main() {
-	entrada := make(chan requisicao)
-	pronto := make(chan struct{})
-	go func() {
-		servico(entrada)
-		close(pronto)
-	}()
+	saida1 := make(chan int)
+	saida2 := make(chan int)
 
-	for i := range 5 {
-		resposta := make(chan int)
-		entrada <- requisicao{valor: i, resposta: resposta}
-		// Fica bloqueado até o serviço responder
-		fmt.Println("resposta:", <-resposta)
-	}
+	// Aguarda o término dos trabalhadores
+	var wg sync.WaitGroup
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 0) })
 
-	// Sem mais requisições: o serviço termina
-	close(entrada)
-	<-pronto
+	// Copia a sequência de números para todos os canais de saída
+	tee(sequenciaNumeros(1, 10), saida1, saida2)
+	wg.Wait()
+
+	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
+	// do que o timeout, então parte dos valores destinados a ele é descartada.
+	saida1 = make(chan int)
+	saida2 = make(chan int)
+
+	wg.Go(func() { trabalhador(1, saida1, 0) })
+	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
+
+	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
+	wg.Wait()
 }
 ```
 
-## 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
+#### Tee com timeout
+
+Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee/tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma _goroutine_ para cada envio.
+
+Descartar mensagens é uma decisão de projeto, e não parte do padrão. Com o descarte, o consumidor lento deixa de ver todos os valores, que era justamente a garantia do tee. Por isso o exemplo avisa na saída cada vez que descarta, em vez de descartar em silêncio. Repare também que o timeout limita o atraso, mas não acaba com ele, pois cada valor ainda pode esperar até `timeout` em cada saída lenta. Outras formas de lidar com um consumidor lento aparecem na [janela deslizante](#-janela-deslizante) e na [contrapressão](#-contrapressão-backpressure).
+
+No exemplo, a função principal executa as duas versões. Na segunda, o trabalhador 2 leva 250ms por valor e o timeout é de 100ms, então parte dos valores destinados a ele é descartada.
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+// teeComTimeout é um tee que não espera indefinidamente por um consumidor
+// lento: se uma saída não receber o valor dentro de `timeout`, o valor é
+// descartado para aquela saída e o tee segue em frente.
+// Descartar mensagens é uma decisão de projeto, não parte do padrão.
+func teeComTimeout(entrada <-chan int, timeout time.Duration, saidas ...chan<- int) {
+	for valor := range entrada {
+		for i, saida := range saidas {
+			// Um select por saída: o que acontecer primeiro, o envio ou o timeout
+			select {
+			case saida <- valor:
+			case <-time.After(timeout):
+				// Sinalizamos o descarte explicitamente para não perder
+				// a informação silenciosamente.
+				fmt.Printf("tee: descarte por timeout, saida=%d valor=%d\n", i+1, valor)
+			}
+		}
+	}
+	// Como a entrada foi consumida, fecha os canais de saída
+	for _, saida := range saidas {
+		close(saida)
+	}
+}
+```
+
+### ⚗️ Fan-in
+
+**Também conhecido como:** _merge_, multiplexação (o termo que Rob Pike usa na palestra de 2012).
+
+Um fan-in copia dados de múltiplos canais de entrada e escreve em um único canal de saída. Normalmente um fan-in só termina quando todos os canais de entrada são fechados.
+
+A função fan-in pode receber vários canais de entrada através de [parâmetros múltiplos](https://gobyexample.com/variadic-functions).
+
+No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
+
+Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um `sync.WaitGroup` para saber quando todos os canais de entrada foram processados. O motivo é o mesmo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers). Os canais transportam os dados, e o `WaitGroup` apenas conta quem terminou.
+
+Repare que temos uma _goroutine_ que aguarda em `wg.Wait()` até que todas as entradas sejam consumidas, finalizando assim o canal de saída.
+
+> **Atenção:** estes geradores não são canceláveis. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+// fanin combina vários canais de entrada em um único canal de saída.
+// Utiliza um WaitGroup para saber quando todos os canais de entrada foram processados.
+func fanin(entradas ...<-chan int) <-chan int {
+	saida := make(chan int)
+	var wg sync.WaitGroup
+
+	for _, entrada := range entradas {
+		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
+		wg.Go(func() {
+			for valor := range entrada {
+				saida <- valor
+			}
+		})
+	}
+
+	// Quando todos os canais de entrada terminarem, fecha o canal de saída
+	go func() {
+		wg.Wait()
+		close(saida)
+	}()
+
+	return saida
+}
+
+// sequenciaNumeros cria um canal que envia uma sequência de números de inicial a final.
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		close(saida)
+	}()
+	return saida
+}
+
+func main() {
+	// Combina três canais de sequência em um único canal
+	canal := fanin(
+		sequenciaNumeros(1, 10),
+		sequenciaNumeros(11, 20),
+		sequenciaNumeros(21, 30),
+	)
+
+	// Lê e imprime os valores do canal combinado
+	for valor := range canal {
+		fmt.Printf("valor: %v\n", valor)
+	}
+
+	// Com um número fixo de entradas, uma única goroutine com select basta
+	// (veja fan_in_select.go)
+	canal = faninSelect(
+		sequenciaNumeros(31, 40),
+		sequenciaNumeros(41, 50),
+	)
+	for valor := range canal {
+		fmt.Printf("valor (select): %v\n", valor)
+	}
+}
+```
+
+#### Fan-in com uma _goroutine_ e `select`
+
+Quando o número de entradas é fixo e conhecido, Rob Pike mostra na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) uma variante mais enxuta. Uma única _goroutine_ com um `select` repassa para a saída o valor da entrada que estiver pronta primeiro.
+
+A versão da palestra roda para sempre. [Aqui](./fan_in/fan_in_select.go) ela também trata o fechamento das entradas, com o mesmo truque do **canal nil** usado na [janela deslizante](#-janela-deslizante). Quando uma entrada é fechada, a variável vira `nil` e aquele `case` deixa de ser escolhido. Quando todas viram `nil`, o laço termina e a saída é fechada. Como só uma _goroutine_ escreve na saída, ela mesma fecha o canal, sem `WaitGroup`.
+
+Quando usar cada uma? Se o número de canais é variável, como em um _slice_ ou em parâmetros múltiplos, use uma _goroutine_ por entrada, porque um `select` tem um número fixo de `case`s escrito no código. Se o número é fixo e pequeno, o `select` é mais direto. Basta uma _goroutine_, e não é preciso contar quem terminou.
+
+```go
+package main
+
+// faninSelect combina um número fixo de canais de entrada (aqui, dois) usando
+// uma única goroutine e um select, em vez de uma goroutine por entrada.
+// Como só uma goroutine escreve na saída, ela mesma fecha o canal ao terminar:
+// não é preciso contar ninguém.
+func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		defer close(saida)
+		for entrada1 != nil || entrada2 != nil {
+			select {
+			case valor, ok := <-entrada1:
+				if !ok {
+					// Entrada fechada: um canal nil nunca é selecionado,
+					// o que desabilita este case.
+					entrada1 = nil
+					continue
+				}
+				saida <- valor
+			case valor, ok := <-entrada2:
+				if !ok {
+					entrada2 = nil
+					continue
+				}
+				saida <- valor
+			}
+		}
+	}()
+	return saida
+}
+```
+
+### 👷‍♂️👷‍♀️ Grupo de Trabalhadores (pool of workers)
 
 **Também conhecido como:** _worker pool_, _pool_ de _goroutines_.
 
@@ -703,663 +760,275 @@ func main() {
 > }()
 > ```
 
-## 🚥 Semáforo (paralelismo limitado)
+### 📨 Requisição e resposta
 
-**Também conhecido como:** _bounded parallelism_, limite de _goroutines_ em voo.
+**Também conhecido como:** canal de resposta, _RPC_ interno, _restoring sequencing_ (o nome que Rob Pike dá a um uso específico da ideia, comentado abaixo).
 
-Um canal com buffer de capacidade `n` funciona como um semáforo. Enviar ocupa uma vaga, e bloqueia quando todas estão ocupadas. Receber libera uma vaga. Com isso dá para limitar quantas _goroutines_ executam um trecho ao mesmo tempo sem criar um grupo fixo. Cada tarefa tem sua própria _goroutine_, mas só `n` avançam de cada vez. A técnica aparece com o nome de _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+Canais são valores como qualquer outro, então uma mensagem pode carregar um canal. Quem envia uma requisição inclui nela o canal pelo qual quer receber a resposta e fica bloqueado lendo desse canal. Quem atende processa e responde no canal que veio na mensagem. Nenhum estado é compartilhado, pois pedido e resposta viajam por canais. É assim que se faz uma _goroutine_ funcionar como um serviço, e a ideia reaparece na [goroutine dona do estado](#-goroutine-dona-do-estado).
 
-Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers) fixa o número de _goroutines_. O [sistema de ticket](#-sistema-de-ticket) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
+No exemplo, a função principal envia cinco requisições ao `servico` e espera cada resposta antes de enviar a próxima. O campo `resposta` é declarado como `chan<- int`, então o serviço só pode escrever nele.
 
-No exemplo, dez tarefas são disparadas de uma vez, mas o semáforo tem três vagas. A saída mostra que o número de tarefas ativas nunca passa de três. O contador atômico (`sync/atomic`) serve apenas para observar isso e não faz parte do padrão. O `sync.WaitGroup` aguarda o término de todas as tarefas.
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-	"sync/atomic"
-	"time"
-)
-
-// executarTarefas dispara uma goroutine por tarefa, mas deixa no máximo
-// `limite` delas executarem ao mesmo tempo.
-func executarTarefas(tarefas, limite int) {
-	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
-	// vaga ocupada. Enviar bloqueia quando as `limite` vagas estão ocupadas.
-	sem := make(chan struct{}, limite)
-
-	var wg sync.WaitGroup
-	// Contador usado apenas para observar quantas tarefas estão ativas;
-	// ele não faz parte do padrão.
-	var ativas atomic.Int32
-
-	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
-	for i := range tarefas {
-		wg.Go(func() {
-			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)
-			defer func() { <-sem }() // libera a vaga ao terminar
-
-			fmt.Printf("tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
-			time.Sleep(100 * time.Millisecond)
-			ativas.Add(-1)
-		})
-	}
-
-	wg.Wait()
-}
-
-func main() {
-	// Dez tarefas, no máximo três ao mesmo tempo
-	executarTarefas(10, 3)
-}
-```
-
-## 🧑‍🏭 Pipeline
-
-**Também conhecido como:** cadeia de estágios. Cada função do _pipeline_ é um _estágio_ (_stage_).
-
-Um _pipeline_ trabalha recebendo valores de um canal e escrevendo em outro canal, normalmente após realizar alguma transformação no valor.
-
-No exemplo temos a função `dobro` atuando como um _pipeline_, que irá receber os valores enviados ao canal de entrada retornando os valores transformados.
-
-Um canal pode ser definido como sendo apenas para leitura (`<-chan`) ou apenas para escrita (`chan<-`). Com isso o compilador passa a impedir que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#parada-com-confirmação), usado nos dois sentidos de propósito.
-
-Os valores gerados por `sequenciaNumeros` são enviados para o canal de entrada do _pipeline_. A função principal recebe os valores transformados pelo canal de saída e os imprime.
-
-Vários pipelines poderiam ser encadeados para realizar múltiplas transformações.
-
-> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
+Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike usa a mesma ideia para "restaurar a sequência" de um fan-in. Cada mensagem carrega um canal `wait`, e quem produziu só envia a próxima depois que o leitor avisa, por esse canal, que terminou de processar a anterior.
 
 ```go
 package main
 
 import "fmt"
 
-func dobro(entrada <-chan int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for valor := range entrada {
-			saida <- valor * 2
-		}
-		// Após ter terminado de transformar os valores de entrada,
-		//  fecha o canal de saida
-		close(saida)
-	}()
-	return saida
-}
-
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
-	}()
-	return saida
-}
-
-func main() {
-	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
-		fmt.Printf("valor: %v\n", valor)
-	}
-}
-```
-
-## ⚗️ Fan-in
-
-**Também conhecido como:** _merge_, multiplexação (o termo que Rob Pike usa na palestra de 2012).
-
-Um fan-in copia dados de múltiplos canais de entrada e escreve em um único canal de saída. Normalmente um fan-in só termina quando todos os canais de entrada são fechados.
-
-A função fan-in pode receber vários canais de entrada através de [parâmetros múltiplos](https://gobyexample.com/variadic-functions).
-
-No exemplo abaixo, enviamos vários geradores como entrada para a função fan-in e nos é retornado um único canal de saída. Internamente, uma _goroutine_ é criada para ler os valores de cada canal de entrada, porém todas escrevem no mesmo canal de saída.
-
-Envio de mensagem em um canal fechado causa um erro (_panic_), por isso é importante garantir que todos os canais de entrada estejam fechados antes de fechar o canal de saída. Utilizamos um `sync.WaitGroup` para saber quando todos os canais de entrada foram processados. O motivo é o mesmo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers). Os canais transportam os dados, e o `WaitGroup` apenas conta quem terminou.
-
-Repare que temos uma _goroutine_ que aguarda em `wg.Wait()` até que todas as entradas sejam consumidas, finalizando assim o canal de saída.
-
-> **Atenção:** estes geradores não são canceláveis. Se o consumidor parar de ler antes do fim, a _goroutine_ vaza. Veja [Cancelamento](#-cancelamento-e-vazamento-de-goroutines).
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-)
-
-// fanin combina vários canais de entrada em um único canal de saída.
-// Utiliza um WaitGroup para saber quando todos os canais de entrada foram processados.
-func fanin(entradas ...<-chan int) <-chan int {
-	saida := make(chan int)
-	var wg sync.WaitGroup
-
-	for _, entrada := range entradas {
-		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
-		wg.Go(func() {
-			for valor := range entrada {
-				saida <- valor
-			}
-		})
-	}
-
-	// Quando todos os canais de entrada terminarem, fecha o canal de saída
-	go func() {
-		wg.Wait()
-		close(saida)
-	}()
-
-	return saida
-}
-
-// sequenciaNumeros cria um canal que envia uma sequência de números de inicial a final.
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		close(saida)
-	}()
-	return saida
-}
-
-func main() {
-	// Combina três canais de sequência em um único canal
-	canal := fanin(
-		sequenciaNumeros(1, 10),
-		sequenciaNumeros(11, 20),
-		sequenciaNumeros(21, 30),
-	)
-
-	// Lê e imprime os valores do canal combinado
-	for valor := range canal {
-		fmt.Printf("valor: %v\n", valor)
-	}
-
-	// Com um número fixo de entradas, uma única goroutine com select basta
-	// (veja fan_in_select.go)
-	canal = faninSelect(
-		sequenciaNumeros(31, 40),
-		sequenciaNumeros(41, 50),
-	)
-	for valor := range canal {
-		fmt.Printf("valor (select): %v\n", valor)
-	}
-}
-```
-
-### Fan-in com uma _goroutine_ e `select`
-
-Quando o número de entradas é fixo e conhecido, Rob Pike mostra na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) uma variante mais enxuta. Uma única _goroutine_ com um `select` repassa para a saída o valor da entrada que estiver pronta primeiro.
-
-A versão da palestra roda para sempre. [Aqui](./fan_in/fan_in_select.go) ela também trata o fechamento das entradas, com o mesmo truque do **canal nil** usado na [janela deslizante](#-janela-deslizante). Quando uma entrada é fechada, a variável vira `nil` e aquele `case` deixa de ser escolhido. Quando todas viram `nil`, o laço termina e a saída é fechada. Como só uma _goroutine_ escreve na saída, ela mesma fecha o canal, sem `WaitGroup`.
-
-Quando usar cada uma? Se o número de canais é variável, como em um _slice_ ou em parâmetros múltiplos, use uma _goroutine_ por entrada, porque um `select` tem um número fixo de `case`s escrito no código. Se o número é fixo e pequeno, o `select` é mais direto. Basta uma _goroutine_, e não é preciso contar quem terminou.
-
-```go
-package main
-
-// faninSelect combina um número fixo de canais de entrada (aqui, dois) usando
-// uma única goroutine e um select, em vez de uma goroutine por entrada.
-// Como só uma goroutine escreve na saída, ela mesma fecha o canal ao terminar:
-// não é preciso contar ninguém.
-func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		defer close(saida)
-		for entrada1 != nil || entrada2 != nil {
-			select {
-			case valor, ok := <-entrada1:
-				if !ok {
-					// Entrada fechada: um canal nil nunca é selecionado,
-					// o que desabilita este case.
-					entrada1 = nil
-					continue
-				}
-				saida <- valor
-			case valor, ok := <-entrada2:
-				if !ok {
-					entrada2 = nil
-					continue
-				}
-				saida <- valor
-			}
-		}
-	}()
-	return saida
-}
-```
-
-## 📣 Fan-out
-
-**Também conhecido como:** distribuição, _work distribution_.
-
-Um fan-out distribui os valores de um canal de entrada entre várias _goroutines_. O artigo sobre [_pipelines_](https://go.dev/blog/pipelines) define assim: múltiplas funções lendo do mesmo canal até que ele seja fechado. Cada valor é processado por exatamente uma delas, o que permite dividir um trabalho demorado entre vários trabalhadores.
-
-Não é preciso nenhum código para decidir quem recebe o quê, porque o próprio canal faz a distribuição. Quando várias _goroutines_ estão bloqueadas lendo o mesmo canal, cada envio é entregue a apenas uma delas.
-
-No exemplo, três trabalhadores dividem entre si os dez valores gerados por `sequenciaNumeros`. Repare na saída que nenhum valor aparece duas vezes. Um `sync.WaitGroup` aguarda o término de todos, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers), que é uma aplicação deste padrão.
-
-Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para todos os consumidores.
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-	"time"
-)
-
-// trabalhador lê do canal de entrada, que é compartilhado com os demais
-// trabalhadores. Cada valor é entregue a exatamente um deles: quem estiver
-// livre primeiro, recebe.
-func trabalhador(id int, entrada <-chan int) {
-	for valor := range entrada {
-		fmt.Printf("id: %d processando valor: %v\n", id, valor)
-		// Simula um processamento demorado
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-// fanout distribui os valores de um único canal de entrada entre n
-// trabalhadores e só retorna quando todos terminarem.
-func fanout(entrada <-chan int, n int) {
-	var wg sync.WaitGroup
-
-	for i := range n {
-		wg.Go(func() {
-			trabalhador(i+1, entrada)
-		})
-	}
-	wg.Wait()
-}
-
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
-	}()
-	return saida
-}
-
-func main() {
-	// Três trabalhadores dividem entre si os dez valores da sequência
-	fanout(sequenciaNumeros(1, 10), 3)
-}
-```
-
-## 🔀 Tee (broadcast)
-
-**Também conhecido como:** _broadcast_, _publish/subscribe_ em memória. O segundo é aproximado: em um _pub/sub_ os assinantes costumam entrar e sair dinamicamente, enquanto o tee tem um conjunto fixo de saídas.
-
-Um tee copia cada valor de um canal de entrada para todos os canais de saída, de modo que todos os consumidores veem todos os valores. O nome vem do comando `tee` do Unix, que duplica o que recebe. É o oposto do [fan-out](#-fan-out), em que cada valor vai para um único consumidor.
-
-No exemplo, uma sequência de números é gerada e copiada para múltiplos canais de saída. Estes canais possuem seus respectivos trabalhadores que irão fazer o processamento do valor.
-
-O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saídas. Quando a entrada é fechada, ele fecha todas as saídas. Para aguardar o término dos trabalhadores, a função principal usa um `sync.WaitGroup`, pelo motivo explicado no [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers).
-
-Como os canais não têm buffer, o tee só passa para o próximo valor depois que todas as saídas receberam o atual. A consequência é que um consumidor lento atrasa todos os outros, e também o produtor. É a [contrapressão](#-contrapressão-backpressure) aplicada ao broadcast. Ninguém perde mensagem, mas todos andam no ritmo do mais lento.
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-	"time"
-)
-
-// tee copia cada valor da entrada para todas as saídas: todos os consumidores
-// veem todos os valores. O envio é sequencial e sem buffer, então o tee só
-// avança quando todas as saídas receberam o valor: um consumidor lento
-// atrasa todos os outros.
-func tee(entrada <-chan int, saidas ...chan<- int) {
-	for valor := range entrada {
-		for _, saida := range saidas {
-			saida <- valor
-		}
-	}
-	// Como a entrada foi consumida, fecha os canais de saída
-	for _, saida := range saidas {
-		close(saida)
-	}
-}
-
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
-	}()
-	return saida
-}
-
-// trabalhador consome os valores de uma das saídas do tee. O parâmetro
-// `demora` simula o tempo de processamento de cada valor.
-func trabalhador(id int, entrada <-chan int, demora time.Duration) {
-	for valor := range entrada {
-		fmt.Println("id: ", id, " valor: ", valor)
-		time.Sleep(demora)
-	}
-}
-
-func main() {
-	saida1 := make(chan int)
-	saida2 := make(chan int)
-
-	// Aguarda o término dos trabalhadores
-	var wg sync.WaitGroup
-	wg.Go(func() { trabalhador(1, saida1, 0) })
-	wg.Go(func() { trabalhador(2, saida2, 0) })
-
-	// Copia a sequência de números para todos os canais de saída
-	tee(sequenciaNumeros(1, 10), saida1, saida2)
-	wg.Wait()
-
-	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
-	// do que o timeout, então parte dos valores destinados a ele é descartada.
-	saida1 = make(chan int)
-	saida2 = make(chan int)
-
-	wg.Go(func() { trabalhador(1, saida1, 0) })
-	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
-
-	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
-	wg.Wait()
-}
-```
-
-### Tee com timeout
-
-Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee/tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma _goroutine_ para cada envio.
-
-Descartar mensagens é uma decisão de projeto, e não parte do padrão. Com o descarte, o consumidor lento deixa de ver todos os valores, que era justamente a garantia do tee. Por isso o exemplo avisa na saída cada vez que descarta, em vez de descartar em silêncio. Repare também que o timeout limita o atraso, mas não acaba com ele, pois cada valor ainda pode esperar até `timeout` em cada saída lenta. Outras formas de lidar com um consumidor lento aparecem na [janela deslizante](#-janela-deslizante) e na [contrapressão](#-contrapressão-backpressure).
-
-No exemplo, a função principal executa as duas versões. Na segunda, o trabalhador 2 leva 250ms por valor e o timeout é de 100ms, então parte dos valores destinados a ele é descartada.
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-)
-
-// teeComTimeout é um tee que não espera indefinidamente por um consumidor
-// lento: se uma saída não receber o valor dentro de `timeout`, o valor é
-// descartado para aquela saída e o tee segue em frente.
-// Descartar mensagens é uma decisão de projeto, não parte do padrão.
-func teeComTimeout(entrada <-chan int, timeout time.Duration, saidas ...chan<- int) {
-	for valor := range entrada {
-		for i, saida := range saidas {
-			// Um select por saída: o que acontecer primeiro, o envio ou o timeout
-			select {
-			case saida <- valor:
-			case <-time.After(timeout):
-				// Sinalizamos o descarte explicitamente para não perder
-				// a informação silenciosamente.
-				fmt.Printf("tee: descarte por timeout, saida=%d valor=%d\n", i+1, valor)
-			}
-		}
-	}
-	// Como a entrada foi consumida, fecha os canais de saída
-	for _, saida := range saidas {
-		close(saida)
-	}
-}
-```
-
-## 🪟 Janela deslizante
-
-**Também conhecido como:** _drop-oldest buffer_. Evite tratar _ring buffer_ como sinônimo. O _ring buffer_ é uma forma de armazenar os dados, enquanto a janela deslizante é a regra de descarte, em que sai sempre o mais antigo.
-
-Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor lento trave um escritor rápido. Ela funciona deslizando sobre os dados. A ordem de entregas é garantida, porém dados antigos podem ser descartados se o consumidor for muito lento.
-
-No exemplo, uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo à medida que a janela desliza os valores antigos são descartados.
-
-Para fazer a janela deslizante, uma única _goroutine_ é dona de todo o estado (uma fila com tamanho máximo fixo) e usa um `select` para reagir ao que acontecer primeiro. Se chega um valor da entrada, ele entra na fila, e o mais antigo é descartado caso ela esteja cheia. Se o consumidor está pronto para receber, o primeiro da fila é enviado.
-
-O truque aqui é o **canal nil**. Um `select` nunca escolhe um `case` cujo canal é `nil`. Quando a fila está vazia, o canal de envio fica `nil` e o `case` de envio é desabilitado, pois não há o que enviar. Quando a entrada é fechada, a variável `entrada` passa a valer `nil` e o `case` de recebimento é desabilitado. Daí em diante só resta esvaziar a fila.
-
-Como só uma _goroutine_ toca a fila, que é a técnica da [goroutine dona do estado](#-goroutine-dona-do-estado), não existe disputa entre produtor e consumidor pelo estado. Uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e tinha uma corrida sutil que podia travar o programa.
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-)
-
-// janelaDeslizante mantém apenas os `tamanho` itens mais recentes vindos de
-// `entrada`, descartando o mais antigo quando a janela enche. Uma única
-// goroutine é dona de todo o estado (a fila), então não há disputa entre
-// produtor e consumidor pelo buffer.
-func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
-	defer close(saida)
-	var fila []int
-
-	for entrada != nil || len(fila) > 0 {
-		// O case de envio só é habilitado quando há algo na fila:
-		// um canal nil nunca é selecionado, o que desabilita o case.
-		var envio chan<- int
-		var cabeca int
-		if len(fila) > 0 {
-			envio = saida
-			cabeca = fila[0]
-		}
-
-		select {
-		case valor, ok := <-entrada:
-			if !ok {
-				// Entrada fechada: desabilita este case (canal nil)
-				// e continua apenas drenando a fila.
-				entrada = nil
-				continue
-			}
-			if len(fila) == tamanho {
-				// Janela cheia, descarta o mais antigo e adiciona o novo
-				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
-				// fila[1:] não libera memória na hora: o array de apoio é
-				// mantido até o próximo append realocar. Para uma janela
-				// pequena isso é irrelevante, mas é bom saber.
-				fila = fila[1:]
-			}
-			fila = append(fila, valor)
-
-		case envio <- cabeca:
-			fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", cabeca)
-			fila = fila[1:]
-		}
-	}
-}
-
-// sequenciaNumeros, aqui, avisa a cada envio e faz uma pausa de um segundo
-// entre eles, para que o produtor seja mais rápido do que o consumidor.
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-			fmt.Printf("Produtor: Enviou %d\n", i)
-			time.Sleep(1 * time.Second)
-		}
-		close(saida)
-	}()
-	return saida
-}
-
-func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
-	for valor := range entrada {
-		fmt.Printf("Consumidor: Recebeu %v\n", valor)
-		time.Sleep(4 * time.Second)
-	}
-	// Fechar o canal é o idioma para sinalizar um evento único
-	close(pronto)
-}
-
-func main() {
-	valores := sequenciaNumeros(1, 10)
-	saida := make(chan int)
-	pronto := make(chan struct{})
-	go leitorLento(saida, pronto)
-	janelaDeslizante(valores, saida, 3)
-	<-pronto
-	fmt.Println("Fim da execução.")
-}
-```
-
-## 🔐 Goroutine dona do estado
-
-**Também conhecido como:** monitor, confinamento, ator. O último é aproximado. No modelo de atores a mensagem vai para o ator pelo nome, e aqui ela vai por canais. É a mesma diferença entre Erlang e Go comentada na introdução.
-
-O provérbio diz "_Don't communicate by sharing memory, share memory by communicating_", ou seja, não comunique compartilhando memória, compartilhe memória comunicando. Em vez de proteger uma variável com mutex e deixar várias _goroutines_ mexerem nela, uma única _goroutine_ é dona do estado, e as outras pedem alterações e leituras por canais. Não há corrida porque só uma _goroutine_ toca o dado. A [janela deslizante](#-janela-deslizante) já usa essa técnica por dentro. Aqui ela é o assunto principal.
-
-No exemplo, a _goroutine_ `contador` é dona de um mapa de contagem por chave. Três _goroutines_ enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](#-requisição-e-resposta). O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-)
-
-// consulta pede a contagem de uma chave e carrega o canal de resposta,
-// como no exemplo de requisição e resposta.
-type consulta struct {
-	chave    string
+// requisicao carrega, além do valor, o canal pelo qual quem pediu quer
+// receber a resposta. O serviço só precisa escrever nele, por isso chan<-.
+type requisicao struct {
+	valor    int
 	resposta chan<- int
 }
 
-// contador é a goroutine dona do estado: só ela toca o mapa `contagem`.
-// As demais goroutines pedem alterações e leituras pelos canais.
-// Termina quando o canal `incrementar` é fechado.
-func contador(incrementar <-chan string, consultar <-chan consulta) {
-	contagem := make(map[string]int)
-	for {
-		select {
-		case chave, ok := <-incrementar:
-			if !ok {
-				return
-			}
-			contagem[chave]++
-		case c := <-consultar:
-			c.resposta <- contagem[c.chave]
-		}
+// servico atende uma requisição por vez e responde no canal que veio
+// dentro da própria mensagem.
+func servico(entrada <-chan requisicao) {
+	for req := range entrada {
+		req.resposta <- req.valor * 2
 	}
 }
 
 func main() {
-	incrementar := make(chan string)
-	consultar := make(chan consulta)
+	entrada := make(chan requisicao)
 	pronto := make(chan struct{})
 	go func() {
-		contador(incrementar, consultar)
+		servico(entrada)
 		close(pronto)
 	}()
 
-	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
-	// os pedidos são atendidos um por vez pela goroutine dona.
-	var wg sync.WaitGroup
-	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		wg.Go(func() {
-			for range 1000 {
-				incrementar <- chave
-			}
-		})
-	}
-	wg.Wait()
-
-	for _, chave := range []string{"gopher", "marmota"} {
+	for i := range 5 {
 		resposta := make(chan int)
-		consultar <- consulta{chave: chave, resposta: resposta}
-		fmt.Printf("dona do estado: %s = %d\n", chave, <-resposta)
+		entrada <- requisicao{valor: i, resposta: resposta}
+		// Fica bloqueado até o serviço responder
+		fmt.Println("resposta:", <-resposta)
 	}
 
-	// Sem mais incrementos: a goroutine dona termina
-	close(incrementar)
+	// Sem mais requisições: o serviço termina
+	close(entrada)
 	<-pronto
-
-	// A mesma contagem feita com mutex (veja com_mutex.go)
-	comMutex()
 }
 ```
 
-### E com mutex?
+## Parte 3 · Encerrando goroutines
 
-O contraponto também vem de Pike, no provérbio "_Channels orchestrate; mutexes serialize_". Se tudo o que você precisa é serializar o acesso a um contador ou a um mapa, um `sync.Mutex` é mais simples e mais claro. A [versão abaixo](./dono_do_estado/com_mutex.go) faz isso e produz o mesmo resultado.
+Os geradores da Parte 2 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
 
-Quando a _goroutine_ dona do estado compensa?
+### 🛑 Cancelamento e vazamento de goroutines
 
-- Quando há regras sobre _como_ o estado muda, como validação, ordem ou eventos.
-- Quando ela precisa reagir a vários canais com `select`, como entradas, prazos e cancelamento. É o caso da janela deslizante.
-- Quando o estado tem ciclo de vida próprio.
+Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina. Dizemos que ela vaza. O coletor de lixo não recolhe _goroutines_, então a memória e os recursos que ela segura ficam presos até o fim do programa. Em um programa curto isso passa despercebido. Em um servidor que roda por meses, é um vazamento de memória.
 
-Se nada disso se aplica, use o mutex.
+O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para. A _goroutine_ fica presa no envio do quarto valor. O programa mostra isso comparando `runtime.NumGoroutine()` antes e depois.
+
+A solução é a mesma do canal de parada visto em [select](#️-select-timeout-e-quit-channel). Cada envio disputa, em um `select`, com um sinal de cancelamento. Só que, em vez de um canal `quit` próprio, o costume em Go é receber um `context.Context` e observar `ctx.Done()`, um canal que é fechado quando o contexto é cancelado. A vantagem é que o mesmo contexto atravessa várias funções e etapas de um _pipeline_, carrega prazos (`context.WithTimeout`) e cancela todo mundo de uma vez. Para se aprofundar, veja o repositório sobre [context](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+Na versão cancelável, a função principal lê três valores e chama `cancel()`. Sem essa chamada, a _goroutine_ ficaria presa exatamente como a primeira.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"runtime"
+)
+
+// sequenciaNumeros é o gerador usado nos outros exemplos. Ele não é
+// cancelável: se o consumidor parar de ler antes do fim, o envio bloqueia
+// para sempre e a goroutine vaza.
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+		}
+		close(saida)
+	}()
+	return saida
+}
+
+// sequenciaNumerosCancelavel faz cada envio disputar com ctx.Done():
+// se o contexto for cancelado, a goroutine desiste do envio e termina.
+func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		defer close(saida)
+		for i := inicial; i <= final; i++ {
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				fmt.Println("gerador: cancelado, encerrando")
+				return
+			}
+		}
+	}()
+	return saida
+}
+
+func main() {
+	antes := runtime.NumGoroutine()
+
+	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
+	valores := sequenciaNumeros(1, 1000)
+	for range 3 {
+		fmt.Printf("valor: %v\n", <-valores)
+	}
+	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
+	// em `saida <- 4` e continuará assim até o programa terminar.
+	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-antes)
+
+	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelaveis := sequenciaNumerosCancelavel(ctx, 1, 1000)
+	for range 3 {
+		fmt.Printf("valor: %v\n", <-cancelaveis)
+	}
+	// Sem esta chamada a goroutine ficaria presa, como a anterior.
+	cancel()
+	// O gerador fecha o canal ao sair: drenar até o fechamento garante que
+	// ele terminou de fato.
+	for range cancelaveis {
+	}
+	fmt.Println("gerador cancelável encerrado")
+
+	// Parada com confirmação (veja quit_confirmacao.go)
+	quitComConfirmacao()
+	// Vários sinais de parada combinados em um só (veja qualquer.go)
+	combinarSinais()
+}
+```
+
+### 🤝 Parada com confirmação
+
+**Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
+
+Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o próprio canal `quit`. Quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
+
+A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta). O método `Close` envia um canal de resposta por um `chan chan error` e espera nele. A _goroutine_ faz a limpeza e responde com o erro, se houver. Prefira essa forma quando a confirmação precisa carregar alguma informação.
+
+Com `context`, o equivalente é chamar `cancel()` e depois esperar um canal `pronto`, que a _goroutine_ fecha ao terminar a limpeza. Isso é necessário porque o `ctx` só leva o sinal em um sentido. Foi o que o exemplo anterior fez ao ler o canal do gerador até ele ser fechado.
 
 ```go
 package main
 
 import (
 	"fmt"
-	"sync"
+	"time"
 )
 
-// contadorMutex resolve o mesmo problema serializando o acesso ao mapa.
-// Quando tudo o que se precisa é proteger um dado, esta versão é mais
-// simples e mais clara do que uma goroutine dona do estado.
-type contadorMutex struct {
-	mu       sync.Mutex
-	contagem map[string]int
-}
-
-func (c *contadorMutex) incrementar(chave string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.contagem[chave]++
-}
-
-func (c *contadorMutex) consultar(chave string) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.contagem[chave]
-}
-
-func comMutex() {
-	c := contadorMutex{contagem: make(map[string]int)}
-
-	var wg sync.WaitGroup
-	for _, chave := range []string{"gopher", "gopher", "marmota"} {
-		wg.Go(func() {
-			for range 1000 {
-				c.incrementar(chave)
+// tagarelaComConfirmacao envia mensagens até receber algo no canal quit.
+// Antes de sair faz a limpeza e confirma no MESMO canal que terminou,
+// por isso o canal é bidirecional.
+func tagarelaComConfirmacao(nome string, quit chan string) <-chan string {
+	saida := make(chan string)
+	go func() {
+		for i := 0; ; i++ {
+			select {
+			case saida <- fmt.Sprintf("%s %d", nome, i):
+			case <-quit:
+				limpeza()
+				quit <- "parei"
+				return
 			}
-		})
-	}
-	wg.Wait()
+		}
+	}()
+	return saida
+}
 
-	for _, chave := range []string{"gopher", "marmota"} {
-		fmt.Printf("mutex: %s = %d\n", chave, c.consultar(chave))
+// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
+func limpeza() {
+	fmt.Println("gerador: liberando recursos...")
+	time.Sleep(100 * time.Millisecond)
+}
+
+func quitComConfirmacao() {
+	quit := make(chan string)
+	c := tagarelaComConfirmacao("Duda", quit)
+	for range 3 {
+		fmt.Println(<-c)
+	}
+	quit <- "pare"
+	// Só seguimos em frente depois que o gerador confirmar que terminou
+	fmt.Println("gerador:", <-quit)
+}
+```
+
+### 🧩 Combinar sinais de parada (or-channel)
+
+**Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_, do mesmo livro citado abaixo, que é outra técnica. Ele embrulha a leitura de um canal para que ela também respeite um sinal de parada.
+
+Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em vez de um `select` com um `case` por origem em cada _goroutine_, a função [`qualquer`](./cancelamento/qualquer.go) combina os canais em um só, que é fechado quando o primeiro deles fechar.
+
+A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Ela toma dois cuidados. O primeiro é o `sync.Once`, que garante um único `close` mesmo que dois sinais cheguem juntos, já que fechar um canal duas vezes causa _panic_. O segundo é que cada _goroutine_ também observa a própria saída. Assim, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem.
+
+Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_".
+
+Se todos os sinais são contextos, prefira derivar um do outro, como em `context.WithTimeout(ctxRequisicao, ...)`. O contexto filho já é cancelado quando o pai é. Combinar canais vale a pena quando as origens são independentes.
+
+De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), que fecha um canal `quit` para encerrar as _goroutines_ do seu `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+// qualquer combina vários sinais de parada em um só: o canal devolvido é
+// fechado assim que o primeiro dos canais recebidos for fechado.
+func qualquer(canais ...<-chan struct{}) <-chan struct{} {
+	saida := make(chan struct{})
+	// Mais de um sinal pode chegar ao mesmo tempo, e fechar um canal duas
+	// vezes causa panic: o sync.Once garante um único close.
+	var once sync.Once
+	for _, c := range canais {
+		go func() {
+			select {
+			case <-c:
+				once.Do(func() { close(saida) })
+			case <-saida:
+				// Outro sinal chegou primeiro: esta goroutine termina
+				// em vez de ficar presa esperando `c` para sempre.
+			}
+		}()
+	}
+	return saida
+}
+
+func combinarSinais() {
+	// Três origens independentes para o sinal de parada
+	ctxRequisicao, cancelarRequisicao := context.WithCancel(context.Background())
+	defer cancelarRequisicao()
+	ctxPrazo, cancelarPrazo := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancelarPrazo()
+	desligar := make(chan struct{}) // seria fechado ao receber um sinal do sistema operacional
+
+	parar := qualquer(ctxRequisicao.Done(), ctxPrazo.Done(), desligar)
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		// Um único case de parada, não importa quantas origens existam
+		select {
+		case <-ticker.C:
+			fmt.Println("trabalhando...")
+		case <-parar:
+			fmt.Println("um dos sinais de parada chegou (aqui, o prazo de 250ms)")
+			return
+		}
 	}
 }
 ```
 
-## 🚦 Contrapressão (backpressure)
+## Parte 4 · Controlando o ritmo
+
+O que fazer quando quem produz e quem consome andam em velocidades diferentes. Cada padrão desta parte dá uma resposta: fazer o produtor esperar, limitar quantos executam ao mesmo tempo, limitar a taxa, agrupar o trabalho ou descartar o que ficou velho.
+
+### 🚦 Contrapressão (backpressure)
 
 **Também conhecido como:** _backpressure_, _bounded queue_ (fila limitada).
 
@@ -1432,7 +1101,158 @@ func main() {
 }
 ```
 
-## 🧑‍🤝‍🧑 Processamento em lote (batch processing)
+### 🚥 Semáforo (paralelismo limitado)
+
+**Também conhecido como:** _bounded parallelism_, limite de _goroutines_ em voo.
+
+Um canal com buffer de capacidade `n` funciona como um semáforo. Enviar ocupa uma vaga, e bloqueia quando todas estão ocupadas. Receber libera uma vaga. Com isso dá para limitar quantas _goroutines_ executam um trecho ao mesmo tempo sem criar um grupo fixo. Cada tarefa tem sua própria _goroutine_, mas só `n` avançam de cada vez. A técnica aparece com o nome de _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](#️️-grupo-de-trabalhadores-pool-of-workers) fixa o número de _goroutines_. O [sistema de ticket](#-sistema-de-ticket) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
+
+No exemplo, dez tarefas são disparadas de uma vez, mas o semáforo tem três vagas. A saída mostra que o número de tarefas ativas nunca passa de três. O contador atômico (`sync/atomic`) serve apenas para observar isso e não faz parte do padrão. O `sync.WaitGroup` aguarda o término de todas as tarefas.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// executarTarefas dispara uma goroutine por tarefa, mas deixa no máximo
+// `limite` delas executarem ao mesmo tempo.
+func executarTarefas(tarefas, limite int) {
+	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
+	// vaga ocupada. Enviar bloqueia quando as `limite` vagas estão ocupadas.
+	sem := make(chan struct{}, limite)
+
+	var wg sync.WaitGroup
+	// Contador usado apenas para observar quantas tarefas estão ativas;
+	// ele não faz parte do padrão.
+	var ativas atomic.Int32
+
+	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
+	for i := range tarefas {
+		wg.Go(func() {
+			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)
+			defer func() { <-sem }() // libera a vaga ao terminar
+
+			fmt.Printf("tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
+			time.Sleep(100 * time.Millisecond)
+			ativas.Add(-1)
+		})
+	}
+
+	wg.Wait()
+}
+
+func main() {
+	// Dez tarefas, no máximo três ao mesmo tempo
+	executarTarefas(10, 3)
+}
+```
+
+### 🎫 Sistema de ticket
+
+**Também conhecido como:** _rate limiting_, _throttling_. São nomes aproximados, porque aqui a taxa é fixa, sem o saldo para rajadas de um _token bucket_ (veja a nota sobre rajada abaixo).
+
+Um sistema de ticket é usado para controlar quando um determinado trabalho pode ser executado, normalmente é utilizado para limitar o uso de um recurso sobre um período de tempo.
+
+Exemplo: Uma API pode ser acionada apenas 15 vezes em um período de 15 minutos. A utilização é medida em blocos de 15 minutos.
+
+No exemplo, a bilheteria é um sistema de ticket que garante que apenas 10 "tickets" sejam emitidos a cada segundo.
+
+Enviamos através de um canal 31 processamentos a serem feitos, mas o sistema de ticket garante que apenas 10 processamentos sejam executados por segundo.
+
+O ticket limita a taxa ao longo do tempo. Para limitar quantas tarefas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
+
+Como pode ser visto, o trabalhador pega um trabalho e fica bloqueado até que um ticket seja enviado através do canal. A ordem importa. Como o trabalho é lido primeiro, o trabalhador encerra sem gastar um ticket à toa quando o canal de trabalhos é fechado.
+
+> **Nota sobre rajada (burst).** Esta implementação emite um ticket a cada `timeout/nTickets`, garantindo o teto mesmo se o consumidor for mais lento do que o ticker. Em troca, ela **não permite rajadas**, pois não há um saldo inicial de `nTickets` para ser consumido de uma só vez. Se você precisar de rate-limit com tolerância a rajadas (token bucket, isto é, rajada de até N seguida de reposição a `T/N`), use [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate).
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type (
+	Trabalho func()
+	ticket   int
+)
+
+func trabalhador(tickets <-chan ticket, trabalhos <-chan Trabalho) {
+	for {
+		// Lê o trabalho primeiro: se o canal foi fechado, encerra
+		// sem gastar um ticket.
+		trabalho, ok := <-trabalhos
+		if !ok {
+			return // canal de trabalhos fechado
+		}
+		<-tickets  // espera autorização antes de executar
+		trabalho() // executa um trabalho
+	}
+}
+
+// bilheteria emite, no máximo, nTickets por intervalo `timeout`,
+// ou seja, um ticket a cada `timeout/nTickets`. Garante o teto mesmo com consumidor
+// lento, em troca de não permitir rajadas (nenhuma janela "extra" no início).
+func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duration, nTickets int) {
+	intervalo := timeout / time.Duration(nTickets)
+	ticker := time.NewTicker(intervalo)
+	defer ticker.Stop()
+
+	var i int
+	for {
+		select {
+		case tickets <- ticket(i):
+			i++
+		case <-ctx.Done():
+			return
+		}
+
+		// espera o intervalo mínimo antes de emitir o próximo ticket
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func main() {
+	tickets := make(chan ticket)
+	trabalhos := make(chan Trabalho)
+	pronto := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go bilheteria(ctx, tickets, 1*time.Second, 10)
+	go func() {
+		trabalhador(tickets, trabalhos)
+		// Sinaliza o término fechando o canal
+		close(pronto)
+	}()
+
+	for i := 0; i <= 30; i++ {
+		trabalhos <- func() {
+			fmt.Println("processando ticket")
+		}
+		fmt.Println("trabalho ", i, " enviado")
+	}
+
+	close(trabalhos)
+	<-pronto
+}
+```
+
+### 🧑‍🤝‍🧑 Processamento em lote (batch processing)
 
 **Também conhecido como:** _batching_, _micro-batching_.
 
@@ -1575,144 +1395,311 @@ func main() {
 }
 ```
 
-## 🎫 Sistema de ticket
+### 🪟 Janela deslizante
 
-**Também conhecido como:** _rate limiting_, _throttling_. São nomes aproximados, porque aqui a taxa é fixa, sem o saldo para rajadas de um _token bucket_ (veja a nota sobre rajada abaixo).
+**Também conhecido como:** _drop-oldest buffer_. Evite tratar _ring buffer_ como sinônimo. O _ring buffer_ é uma forma de armazenar os dados, enquanto a janela deslizante é a regra de descarte, em que sai sempre o mais antigo.
 
-Um sistema de ticket é usado para controlar quando um determinado trabalho pode ser executado, normalmente é utilizado para limitar o uso de um recurso sobre um período de tempo.
+Uma janela deslizante (sliding window) é utilizada para prevenir que um leitor lento trave um escritor rápido. Ela funciona deslizando sobre os dados. A ordem de entregas é garantida, porém dados antigos podem ser descartados se o consumidor for muito lento.
 
-Exemplo: Uma API pode ser acionada apenas 15 vezes em um período de 15 minutos. A utilização é medida em blocos de 15 minutos.
+No exemplo, uma sequência de números é gerada, porém nosso consumidor é mais lento que o produtor, logo à medida que a janela desliza os valores antigos são descartados.
 
-No exemplo, a bilheteria é um sistema de ticket que garante que apenas 10 "tickets" sejam emitidos a cada segundo.
+Para fazer a janela deslizante, uma única _goroutine_ é dona de todo o estado (uma fila com tamanho máximo fixo) e usa um `select` para reagir ao que acontecer primeiro. Se chega um valor da entrada, ele entra na fila, e o mais antigo é descartado caso ela esteja cheia. Se o consumidor está pronto para receber, o primeiro da fila é enviado.
 
-Enviamos através de um canal 31 processamentos a serem feitos, mas o sistema de ticket garante que apenas 10 processamentos sejam executados por segundo.
+O truque aqui é o **canal nil**. Um `select` nunca escolhe um `case` cujo canal é `nil`. Quando a fila está vazia, o canal de envio fica `nil` e o `case` de envio é desabilitado, pois não há o que enviar. Quando a entrada é fechada, a variável `entrada` passa a valer `nil` e o `case` de recebimento é desabilitado. Daí em diante só resta esvaziar a fila.
 
-O ticket limita a taxa ao longo do tempo. Para limitar quantas tarefas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
-
-Como pode ser visto, o trabalhador pega um trabalho e fica bloqueado até que um ticket seja enviado através do canal. A ordem importa. Como o trabalho é lido primeiro, o trabalhador encerra sem gastar um ticket à toa quando o canal de trabalhos é fechado.
-
-> **Nota sobre rajada (burst).** Esta implementação emite um ticket a cada `timeout/nTickets`, garantindo o teto mesmo se o consumidor for mais lento do que o ticker. Em troca, ela **não permite rajadas**, pois não há um saldo inicial de `nTickets` para ser consumido de uma só vez. Se você precisar de rate-limit com tolerância a rajadas (token bucket, isto é, rajada de até N seguida de reposição a `T/N`), use [`golang.org/x/time/rate`](https://pkg.go.dev/golang.org/x/time/rate).
+Como só uma _goroutine_ toca a fila, que é a técnica da [goroutine dona do estado](#-goroutine-dona-do-estado), não existe disputa entre produtor e consumidor pelo estado. Uma versão anterior deste exemplo usava um canal com buffer compartilhado por duas _goroutines_ e tinha uma corrida sutil que podia travar o programa.
 
 ```go
 package main
 
 import (
-	"context"
 	"fmt"
 	"time"
 )
 
-type (
-	Trabalho func()
-	ticket   int
-)
+// janelaDeslizante mantém apenas os `tamanho` itens mais recentes vindos de
+// `entrada`, descartando o mais antigo quando a janela enche. Uma única
+// goroutine é dona de todo o estado (a fila), então não há disputa entre
+// produtor e consumidor pelo buffer.
+func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
+	defer close(saida)
+	var fila []int
 
-func trabalhador(tickets <-chan ticket, trabalhos <-chan Trabalho) {
-	for {
-		// Lê o trabalho primeiro: se o canal foi fechado, encerra
-		// sem gastar um ticket.
-		trabalho, ok := <-trabalhos
-		if !ok {
-			return // canal de trabalhos fechado
+	for entrada != nil || len(fila) > 0 {
+		// O case de envio só é habilitado quando há algo na fila:
+		// um canal nil nunca é selecionado, o que desabilita o case.
+		var envio chan<- int
+		var cabeca int
+		if len(fila) > 0 {
+			envio = saida
+			cabeca = fila[0]
 		}
-		<-tickets  // espera autorização antes de executar
-		trabalho() // executa um trabalho
+
+		select {
+		case valor, ok := <-entrada:
+			if !ok {
+				// Entrada fechada: desabilita este case (canal nil)
+				// e continua apenas drenando a fila.
+				entrada = nil
+				continue
+			}
+			if len(fila) == tamanho {
+				// Janela cheia, descarta o mais antigo e adiciona o novo
+				fmt.Printf("Janela Deslizante: Buffer cheio, descartou %v para adicionar %v.\n", fila[0], valor)
+				// fila[1:] não libera memória na hora: o array de apoio é
+				// mantido até o próximo append realocar. Para uma janela
+				// pequena isso é irrelevante, mas é bom saber.
+				fila = fila[1:]
+			}
+			fila = append(fila, valor)
+
+		case envio <- cabeca:
+			fmt.Printf("Janela Deslizante: Enviou %v para o consumidor.\n", cabeca)
+			fila = fila[1:]
+		}
 	}
 }
 
-// bilheteria emite, no máximo, nTickets por intervalo `timeout`,
-// ou seja, um ticket a cada `timeout/nTickets`. Garante o teto mesmo com consumidor
-// lento, em troca de não permitir rajadas (nenhuma janela "extra" no início).
-func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duration, nTickets int) {
-	intervalo := timeout / time.Duration(nTickets)
-	ticker := time.NewTicker(intervalo)
-	defer ticker.Stop()
-
-	var i int
-	for {
-		select {
-		case tickets <- ticket(i):
-			i++
-		case <-ctx.Done():
-			return
+// sequenciaNumeros, aqui, avisa a cada envio e faz uma pausa de um segundo
+// entre eles, para que o produtor seja mais rápido do que o consumidor.
+func sequenciaNumeros(inicial, final int) <-chan int {
+	saida := make(chan int)
+	go func() {
+		for i := inicial; i <= final; i++ {
+			saida <- i
+			fmt.Printf("Produtor: Enviou %d\n", i)
+			time.Sleep(1 * time.Second)
 		}
+		close(saida)
+	}()
+	return saida
+}
 
-		// espera o intervalo mínimo antes de emitir o próximo ticket
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			return
-		}
+func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
+	for valor := range entrada {
+		fmt.Printf("Consumidor: Recebeu %v\n", valor)
+		time.Sleep(4 * time.Second)
 	}
+	// Fechar o canal é o idioma para sinalizar um evento único
+	close(pronto)
 }
 
 func main() {
-	tickets := make(chan ticket)
-	trabalhos := make(chan Trabalho)
+	valores := sequenciaNumeros(1, 10)
+	saida := make(chan int)
 	pronto := make(chan struct{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go bilheteria(ctx, tickets, 1*time.Second, 10)
-	go func() {
-		trabalhador(tickets, trabalhos)
-		// Sinaliza o término fechando o canal
-		close(pronto)
-	}()
-
-	for i := 0; i <= 30; i++ {
-		trabalhos <- func() {
-			fmt.Println("processando ticket")
-		}
-		fmt.Println("trabalho ", i, " enviado")
-	}
-
-	close(trabalhos)
+	go leitorLento(saida, pronto)
+	janelaDeslizante(valores, saida, 3)
 	<-pronto
+	fmt.Println("Fim da execução.")
 }
 ```
 
-## ⛓️ Daisy-chain
+## Parte 5 · Padrões avançados
 
-**Também conhecido como:** corrente de _goroutines_, telefone sem fio.
+Padrões que combinam várias peças das partes anteriores, como canais de resposta, `select`, buffer, timeout e `context`. Vale ler as outras partes antes.
 
-_Goroutines_ são baratas, e é comum ter dezenas de milhares delas. Este exemplo, tirado da palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), liga 10 mil _goroutines_ em uma corrente, cada uma somando 1 ao valor que recebe da vizinha da direita e passando o resultado para a esquerda. O valor 1 entra por uma ponta e sai 10001 pela outra.
+### 🔐 Goroutine dona do estado
 
-Ninguém usa isso no dia a dia. O exemplo serve para mostrar que dividir o trabalho em pedaços bem pequenos não custa caro. Criar 10 mil _threads_ do sistema operacional para somar 1 seria impensável. Com _goroutines_, o programa termina em uma fração de segundo.
+**Também conhecido como:** monitor, confinamento, ator. O último é aproximado. No modelo de atores a mensagem vai para o ator pelo nome, e aqui ela vai por canais. É a mesma diferença entre Erlang e Go comentada na introdução.
+
+O provérbio diz "_Don't communicate by sharing memory, share memory by communicating_", ou seja, não comunique compartilhando memória, compartilhe memória comunicando. Em vez de proteger uma variável com mutex e deixar várias _goroutines_ mexerem nela, uma única _goroutine_ é dona do estado, e as outras pedem alterações e leituras por canais. Não há corrida porque só uma _goroutine_ toca o dado. A [janela deslizante](#-janela-deslizante) já usa essa técnica por dentro. Aqui ela é o assunto principal.
+
+No exemplo, a _goroutine_ `contador` é dona de um mapa de contagem por chave. Três _goroutines_ enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](#-requisição-e-resposta). O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
 
 ```go
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
-// elo recebe um valor da vizinha da direita, soma 1 e passa para a esquerda.
-func elo(esquerda chan<- int, direita <-chan int) {
-	esquerda <- 1 + <-direita
+// consulta pede a contagem de uma chave e carrega o canal de resposta,
+// como no exemplo de requisição e resposta.
+type consulta struct {
+	chave    string
+	resposta chan<- int
+}
+
+// contador é a goroutine dona do estado: só ela toca o mapa `contagem`.
+// As demais goroutines pedem alterações e leituras pelos canais.
+// Termina quando o canal `incrementar` é fechado.
+func contador(incrementar <-chan string, consultar <-chan consulta) {
+	contagem := make(map[string]int)
+	for {
+		select {
+		case chave, ok := <-incrementar:
+			if !ok {
+				return
+			}
+			contagem[chave]++
+		case c := <-consultar:
+			c.resposta <- contagem[c.chave]
+		}
+	}
 }
 
 func main() {
-	const n = 10000
+	incrementar := make(chan string)
+	consultar := make(chan consulta)
+	pronto := make(chan struct{})
+	go func() {
+		contador(incrementar, consultar)
+		close(pronto)
+	}()
 
-	// Monta a corrente da esquerda para a direita: cada goroutine fica
-	// bloqueada esperando o valor da vizinha.
-	pontaEsquerda := make(chan int)
-	esquerda := pontaEsquerda
-	var direita chan int
-	for range n {
-		direita = make(chan int)
-		go elo(esquerda, direita)
-		esquerda = direita
+	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
+	// os pedidos são atendidos um por vez pela goroutine dona.
+	var wg sync.WaitGroup
+	for _, chave := range []string{"gopher", "gopher", "marmota"} {
+		wg.Go(func() {
+			for range 1000 {
+				incrementar <- chave
+			}
+		})
+	}
+	wg.Wait()
+
+	for _, chave := range []string{"gopher", "marmota"} {
+		resposta := make(chan int)
+		consultar <- consulta{chave: chave, resposta: resposta}
+		fmt.Printf("dona do estado: %s = %d\n", chave, <-resposta)
 	}
 
-	// Solta o primeiro valor na ponta direita...
-	go func() { direita <- 1 }()
-	// ...e espera ele atravessar as 10 mil goroutines.
-	fmt.Println(<-pontaEsquerda)
+	// Sem mais incrementos: a goroutine dona termina
+	close(incrementar)
+	<-pronto
+
+	// A mesma contagem feita com mutex (veja com_mutex.go)
+	comMutex()
 }
 ```
 
-## 💓 Heartbeat
+#### E com mutex?
+
+O contraponto também vem de Pike, no provérbio "_Channels orchestrate; mutexes serialize_". Se tudo o que você precisa é serializar o acesso a um contador ou a um mapa, um `sync.Mutex` é mais simples e mais claro. A [versão abaixo](./dono_do_estado/com_mutex.go) faz isso e produz o mesmo resultado.
+
+Quando a _goroutine_ dona do estado compensa?
+
+- Quando há regras sobre _como_ o estado muda, como validação, ordem ou eventos.
+- Quando ela precisa reagir a vários canais com `select`, como entradas, prazos e cancelamento. É o caso da janela deslizante.
+- Quando o estado tem ciclo de vida próprio.
+
+Se nada disso se aplica, use o mutex.
+
+```go
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+// contadorMutex resolve o mesmo problema serializando o acesso ao mapa.
+// Quando tudo o que se precisa é proteger um dado, esta versão é mais
+// simples e mais clara do que uma goroutine dona do estado.
+type contadorMutex struct {
+	mu       sync.Mutex
+	contagem map[string]int
+}
+
+func (c *contadorMutex) incrementar(chave string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.contagem[chave]++
+}
+
+func (c *contadorMutex) consultar(chave string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.contagem[chave]
+}
+
+func comMutex() {
+	c := contadorMutex{contagem: make(map[string]int)}
+
+	var wg sync.WaitGroup
+	for _, chave := range []string{"gopher", "gopher", "marmota"} {
+		wg.Go(func() {
+			for range 1000 {
+				c.incrementar(chave)
+			}
+		})
+	}
+	wg.Wait()
+
+	for _, chave := range []string{"gopher", "marmota"} {
+		fmt.Printf("mutex: %s = %d\n", chave, c.consultar(chave))
+	}
+}
+```
+
+### 🏁 Primeiro a responder
+
+**Também conhecido como:** _hedged request_, réplicas, `First` (o nome da função na palestra de Pike).
+
+Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com o timeout visto em [select](#️-select-timeout-e-quit-channel), o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
+
+Repare no canal com buffer de tamanho `len(replicas)`. A função lê uma única resposta e retorna, mas as outras _goroutines_ ainda vão tentar enviar as suas. Com um canal sem buffer elas ficariam bloqueadas no envio para sempre, pois ninguém mais vai ler. Isso é um vazamento de _goroutines_, assunto da seção de [cancelamento](#-cancelamento-e-vazamento-de-goroutines). Com uma vaga por réplica, cada perdedora deposita sua resposta e termina. Este é um bom exemplo de buffer usado para não vazar.
+
+No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um timeout de 20ms. O canal `resposta` tem buffer 1 pelo mesmo motivo.
+
+```go
+package main
+
+import (
+	"fmt"
+	"math/rand/v2"
+	"time"
+)
+
+// replica simula um servidor cuja latência varia a cada chamada.
+func replica(nome string) func(string) string {
+	return func(consulta string) string {
+		time.Sleep(rand.N(100 * time.Millisecond))
+		return fmt.Sprintf("%s respondeu a %q", nome, consulta)
+	}
+}
+
+// primeiro envia a mesma consulta a todas as réplicas e devolve a primeira
+// resposta que chegar.
+func primeiro(consulta string, replicas ...func(string) string) string {
+	// O buffer tem uma vaga por réplica: as respostas perdedoras são
+	// depositadas sem bloquear. Sem ele, essas goroutines ficariam presas
+	// no envio para sempre, pois ninguém mais vai ler do canal.
+	c := make(chan string, len(replicas))
+	for _, r := range replicas {
+		go func() { c <- r(consulta) }()
+	}
+	return <-c
+}
+
+func main() {
+	replicas := []func(string) string{
+		replica("réplica 1"),
+		replica("réplica 2"),
+		replica("réplica 3"),
+	}
+
+	fmt.Println(primeiro("golang", replicas...))
+
+	// Combinado com timeout: usa a resposta mais rápida, desde que chegue
+	// em até 20ms. O buffer de tamanho 1 tem o mesmo papel: se o timeout
+	// vencer, a goroutine ainda consegue depositar a resposta e terminar.
+	resposta := make(chan string, 1)
+	go func() { resposta <- primeiro("csp", replicas...) }()
+
+	select {
+	case r := <-resposta:
+		fmt.Println(r)
+	case <-time.After(20 * time.Millisecond):
+		fmt.Println("tempo esgotado: nenhuma réplica respondeu em 20ms")
+	}
+}
+```
+
+### 💓 Heartbeat
 
 **Também conhecido como:** sinal de vida, _liveness_.
 
@@ -1794,5 +1781,48 @@ func supervisor(intervalo, travamento time.Duration) {
 
 func main() {
 	supervisor(100*time.Millisecond, 1*time.Second)
+}
+```
+
+## Curiosidade
+
+Um exemplo que não resolve nenhum problema do dia a dia, mas mostra o quanto uma _goroutine_ é barata.
+
+### ⛓️ Daisy-chain
+
+**Também conhecido como:** corrente de _goroutines_, telefone sem fio.
+
+_Goroutines_ são baratas, e é comum ter dezenas de milhares delas. Este exemplo, tirado da palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), liga 10 mil _goroutines_ em uma corrente, cada uma somando 1 ao valor que recebe da vizinha da direita e passando o resultado para a esquerda. O valor 1 entra por uma ponta e sai 10001 pela outra.
+
+Ninguém usa isso no dia a dia. O exemplo serve para mostrar que dividir o trabalho em pedaços bem pequenos não custa caro. Criar 10 mil _threads_ do sistema operacional para somar 1 seria impensável. Com _goroutines_, o programa termina em uma fração de segundo.
+
+```go
+package main
+
+import "fmt"
+
+// elo recebe um valor da vizinha da direita, soma 1 e passa para a esquerda.
+func elo(esquerda chan<- int, direita <-chan int) {
+	esquerda <- 1 + <-direita
+}
+
+func main() {
+	const n = 10000
+
+	// Monta a corrente da esquerda para a direita: cada goroutine fica
+	// bloqueada esperando o valor da vizinha.
+	pontaEsquerda := make(chan int)
+	esquerda := pontaEsquerda
+	var direita chan int
+	for range n {
+		direita = make(chan int)
+		go elo(esquerda, direita)
+		esquerda = direita
+	}
+
+	// Solta o primeiro valor na ponta direita...
+	go func() { direita <- 1 }()
+	// ...e espera ele atravessar as 10 mil goroutines.
+	fmt.Println(<-pontaEsquerda)
 }
 ```
