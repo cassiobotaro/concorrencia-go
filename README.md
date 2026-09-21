@@ -1459,8 +1459,8 @@ func main() {
 	entrada <- req{valor: 2}
 	entrada <- req{valor: 3}
 
-	// Envia mais dois itens, porém força a descarga
-	// através de um sinal
+	// Envia mais dois itens e força a descarga do lote
+	// pelo canal de descarga
 	entrada <- req{valor: 4}
 	entrada <- req{valor: 5}
 	descarga <- struct{}{}
