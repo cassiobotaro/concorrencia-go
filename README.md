@@ -6,15 +6,6 @@ No CSP original de Hoare, um processo envia mensagens direto para outro, identif
 
 Outra ideia que volta várias vezes é que [concorrência não é paralelismo](https://go.dev/blog/waza-talk). Concorrência é compor computações independentes, uma forma de estruturar o programa. Paralelismo é executá-las ao mesmo tempo. Um programa concorrente pode rodar em um único processador. E um programa bem estruturado para concorrência costuma paralelizar bem quando há mais de um.
 
-As explicações e exemplos vêm em boa parte da [apresentação](https://github.com/andrebq/andrebq.github.io) do @andrebq.
-
-Outras influências:
-
-- O [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
-- A palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) de Rob Pike (Google I/O 2012), de onde vêm os geradores, o fan-in e o primeiro a responder.
-- A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide) de Sameer Ajmani (Google I/O 2013), de onde vêm o laço `for` com `select` e estado local, a parada confirmada por canal de resposta e o canal `nil` no `select`. As duas palestras são anteriores ao pacote `context`, e a abertura da [Parte 4](#parte-4--encerrar-e-supervisionar) diz o que mudou com ele.
-- Os [Go Proverbs](https://go-proverbs.github.io/), também de Rob Pike (Gopherfest 2015): "_Don't communicate by sharing memory, share memory by communicating_", "_Concurrency is not parallelism_", "_Channels orchestrate; mutexes serialize_" e "_Clear is better than clever_".
-
 O texto parte do princípio de que você conhece Go, inclusive _goroutines_, canais, `select` e `sync.WaitGroup`. Se alguma dessas peças for nova, passe antes pelo [Tour of Go](https://go.dev/tour/concurrency/1), pelos capítulos de concorrência do [Go by Example](https://gobyexample.com/goroutines), que cobrem canais com e sem buffer, direção, `select`, timeouts, fechamento de canal e `WaitGroup`, e pela seção de concorrência do [Effective Go](https://go.dev/doc/effective_go#concurrency). Os padrões daqui usam essas peças sem explicá-las de novo.
 
 Cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--padrões-básicos) traz os padrões básicos, que são a forma dos canais entre as _goroutines_. A [Parte 2](#parte-2--controlando-o-ritmo) trata de produtores e consumidores em ritmos diferentes. A [Parte 3](#parte-3--conversa-entre-goroutines) é sobre uma _goroutine_ responder a outra. A [Parte 4](#parte-4--encerrar-e-supervisionar) ensina a encerrar _goroutines_ e a vigiar as que continuam. Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
@@ -74,3 +65,17 @@ Esta parte trata do que vem depois de mandar parar, e do que fazer quando ningu�
 Um exemplo que não resolve nenhum problema do dia a dia, mas mostra o quanto uma _goroutine_ é barata.
 
 - [⛓️ Daisy-chain](./corrente/README.md): 10 mil _goroutines_ em corrente, para mostrar quanto uma _goroutine_ custa.
+
+## Referências
+
+- [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Rob Pike, Google I/O 2012.
+- [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), Sameer Ajmani, Google I/O 2013.
+- [Go Concurrency Patterns: Context](https://go.dev/blog/context), Sameer Ajmani, 2014.
+- [Go Concurrency Patterns: Pipelines and cancellation](https://go.dev/blog/pipelines), Sameer Ajmani, 2014.
+- [Concurrency is not parallelism](https://go.dev/blog/waza-talk), Rob Pike, 2012.
+- [Go Proverbs](https://go-proverbs.github.io/), Rob Pike, Gopherfest 2015.
+- [Concurrency in Go](https://www.oreilly.com/library/view/concurrency-in-go/9781491941294/), Katherine Cox-Buday, O'Reilly, 2017.
+- [Apresentação sobre concorrência](https://github.com/andrebq/andrebq.github.io) do @andrebq, de onde vêm boa parte das explicações e dos exemplos.
+- [Tour of Go](https://go.dev/tour/concurrency/1), [Go by Example](https://gobyexample.com/goroutines) e [Effective Go](https://go.dev/doc/effective_go#concurrency), para as peças da linguagem.
+- [golang.org/x/sync/errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup) e [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate).
+- [Repositório sobre context](https://github.com/cassiobotaro/contexto), do mesmo autor.
