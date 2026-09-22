@@ -6,7 +6,7 @@ Desde o Go 1.26 dá para encontrar essas _goroutines_. O perfil `goroutineleak`,
 
 As duas palestras que mais aparecem neste material, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013.
 
-Os dois padrões desta pasta tratam do que vem depois de mandar parar: como saber que a _goroutine_ parou e como juntar vários motivos de parada em um só. O [heartbeat](../batimento/README.md) cuida do caso em que ninguém mandou. Os exemplos mostram a forma com `context`, que é a que você vai encontrar em código de hoje, e cita a das palestras onde ela ajuda a entender o que o `context` faz por dentro.
+Os dois padrões desta pasta tratam do que vem depois de mandar parar: como saber que a _goroutine_ parou e como juntar vários motivos de parada em um só. O [heartbeat](../batimento/README.md) cuida do caso em que ninguém mandou. Os exemplos mostram a forma com `context`, que é a que você vai encontrar em código de hoje, e citam a das palestras onde ela ajuda a entender o que o `context` faz por dentro.
 
 Os dois padrões dividem o mesmo `main`, em [`cancelamento.go`](./cancelamento.go).
 
