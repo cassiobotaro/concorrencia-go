@@ -16,6 +16,6 @@ O canal de vagas e o `WaitGroup` fazem duas coisas que o padrão sempre precisa:
 
 A [versão abaixo](./com_errgroup.go) faz isso. Com três vagas e a tarefa 2 falhando, as tarefas 1 a 3 começam, e as outras sete são canceladas antes de começar, porque quando elas conseguem uma vaga o contexto já foi cancelado. A tarefa que falha é andaime, existe só para mostrar o cancelamento.
 
-O custo é uma dependência fora da biblioteca padrão. É a única deste repositório. Vale a pena quando as tarefas devolvem erro e uma falha deve interromper as demais, que é o caso comum em código de produção. Quando as tarefas não falham, ou quando cada erro deve ser tratado por conta própria, o canal com buffer e o `WaitGroup` bastam.
+O custo é uma dependência fora da biblioteca padrão. É a única que o código importa. O `staticcheck` que aparece no `go.mod` é ferramenta de análise, declarado com a diretiva `tool`, e não entra no binário. Vale a pena quando as tarefas devolvem erro e uma falha deve interromper as demais, que é o caso comum em código de produção. Quando as tarefas não falham, ou quando cada erro deve ser tratado por conta própria, o canal com buffer e o `WaitGroup` bastam.
 
 A variante está em [`com_errgroup.go`](./com_errgroup.go).

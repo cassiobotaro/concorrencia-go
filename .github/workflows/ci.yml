@@ -36,11 +36,9 @@ jobs:
       - name: go build
         run: go build ./...
 
-      - name: Instala staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
-
+      # A versão vem do go.mod (diretiva tool), então o Dependabot a acompanha
       - name: staticcheck
-        run: staticcheck ./...
+        run: go tool staticcheck ./...
 
   race:
     name: Testes e exemplos com detector de corrida
