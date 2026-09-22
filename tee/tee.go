@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -22,14 +23,17 @@ func tee(entrada <-chan int, saidas ...chan<- int) {
 	}
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
@@ -44,6 +48,9 @@ func trabalhador(id int, entrada <-chan int, demora time.Duration) {
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	saida1 := make(chan int)
 	saida2 := make(chan int)
 
@@ -53,7 +60,7 @@ func main() {
 	wg.Go(func() { trabalhador(2, saida2, 0) })
 
 	// Copia a sequência de números para todos os canais de saída
-	tee(sequenciaNumeros(1, 10), saida1, saida2)
+	tee(sequenciaNumeros(ctx, 1, 10), saida1, saida2)
 	wg.Wait()
 
 	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
@@ -64,6 +71,6 @@ func main() {
 	wg.Go(func() { trabalhador(1, saida1, 0) })
 	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
 
-	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
+	teeComTimeout(sequenciaNumeros(ctx, 1, 5), 100*time.Millisecond, saida1, saida2)
 	wg.Wait()
 }

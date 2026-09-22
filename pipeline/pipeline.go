@@ -1,34 +1,49 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-func dobro(entrada <-chan int) <-chan int {
+// dobro é um estágio: lê da entrada, escreve o dobro na saída e fecha a
+// saída quando a entrada acaba. O select em cada envio deixa o estágio sair
+// quando o contexto é cancelado, em vez de ficar preso esperando um leitor.
+func dobro(ctx context.Context, entrada <-chan int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for valor := range entrada {
-			saida <- valor * 2
+			select {
+			case saida <- valor * 2:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// Após ter terminado de transformar os valores de entrada,
-		//  fecha o canal de saida
-		close(saida)
 	}()
 	return saida
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
-	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	// O mesmo contexto atravessa o gerador e os dois estágios
+	for valor := range dobro(ctx, dobro(ctx, sequenciaNumeros(ctx, 1, 10))) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }

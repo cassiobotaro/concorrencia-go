@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -50,15 +51,19 @@ func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 
 // sequenciaNumeros, aqui, avisa a cada envio e faz uma pausa de um segundo
 // entre eles, para que o produtor seja mais rápido do que o consumidor.
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 			fmt.Printf("Produtor: Enviou %d\n", i)
 			time.Sleep(1 * time.Second)
 		}
-		close(saida)
 	}()
 	return saida
 }
@@ -73,7 +78,10 @@ func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
 }
 
 func main() {
-	valores := sequenciaNumeros(1, 10)
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	valores := sequenciaNumeros(ctx, 1, 10)
 	saida := make(chan int)
 	pronto := make(chan struct{})
 	go leitorLento(saida, pronto)

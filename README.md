@@ -74,9 +74,7 @@ Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disp
 
 O custo é que a responsabilidade passa para quem consome. Ele precisa criar o contexto e cancelar ao sair, mesmo quando leu tudo, e o `defer cancelar()` do exemplo está ali por isso. Esquecer o `cancel` é um erro que o `go vet` aponta (`lostcancel`): o contexto filho fica registrado no pai até o pai ser cancelado.
 
-A função `sequenciaNumeros` reaparece em vários exemplos, sem o contexto, para que cada arquivo fique no assunto da própria seção. Ela é copiada de propósito, para que cada um possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
-
-> **Atenção:** as cópias sem contexto dos outros exemplos vazam a _goroutine_ se o consumidor parar de ler antes do fim. Cada seção avisa quando isso acontece.
+A função `sequenciaNumeros` reaparece em vários exemplos, sempre com o contexto. Ela é copiada de propósito, para que cada arquivo possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
 
 ```go
 package main
@@ -173,40 +171,55 @@ Repare nas assinaturas. A função `dobro` recebe um `<-chan int` e devolve outr
 
 Os estágios podem ser encadeados. No exemplo, `dobro` é aplicado duas vezes, e cada valor sai multiplicado por quatro.
 
-> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 2](#parte-2--encerrando-goroutines).
+O mesmo `context.Context` atravessa o gerador e os dois estágios. Cada um faz o envio dentro de um `select` com `ctx.Done()`, como o [gerador](#-geradores). Sem isso, um consumidor que parasse de ler no meio deixaria três _goroutines_ presas, uma por etapa, cada uma bloqueada no envio para a seguinte. Com um único `cancel()` todas saem, e cada uma fecha a própria saída ao sair. É o que o artigo sobre [_pipelines_](https://go.dev/blog/pipelines) chama de cancelamento explícito, e a [Parte 2](#parte-2--encerrando-goroutines) trata dele por inteiro.
 
 ```go
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-func dobro(entrada <-chan int) <-chan int {
+// dobro é um estágio: lê da entrada, escreve o dobro na saída e fecha a
+// saída quando a entrada acaba. O select em cada envio deixa o estágio sair
+// quando o contexto é cancelado, em vez de ficar preso esperando um leitor.
+func dobro(ctx context.Context, entrada <-chan int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for valor := range entrada {
-			saida <- valor * 2
+			select {
+			case saida <- valor * 2:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// Após ter terminado de transformar os valores de entrada,
-		//  fecha o canal de saida
-		close(saida)
 	}()
 	return saida
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
-	for valor := range dobro(dobro(sequenciaNumeros(1, 10))) {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	// O mesmo contexto atravessa o gerador e os dois estágios
+	for valor := range dobro(ctx, dobro(ctx, sequenciaNumeros(ctx, 1, 10))) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
@@ -232,6 +245,7 @@ Não confunda com o [tee](#-tee-broadcast), em que cada valor é copiado para to
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -261,21 +275,27 @@ func fanout(entrada <-chan int, n int) {
 	wg.Wait()
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	// Três trabalhadores dividem entre si os dez valores da sequência
-	fanout(sequenciaNumeros(1, 10), 3)
+	fanout(sequenciaNumeros(ctx, 1, 10), 3)
 }
 ```
 
@@ -295,6 +315,7 @@ Como os canais não têm buffer, o tee só passa para o próximo valor depois qu
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -316,14 +337,17 @@ func tee(entrada <-chan int, saidas ...chan<- int) {
 	}
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
@@ -338,6 +362,9 @@ func trabalhador(id int, entrada <-chan int, demora time.Duration) {
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	saida1 := make(chan int)
 	saida2 := make(chan int)
 
@@ -347,7 +374,7 @@ func main() {
 	wg.Go(func() { trabalhador(2, saida2, 0) })
 
 	// Copia a sequência de números para todos os canais de saída
-	tee(sequenciaNumeros(1, 10), saida1, saida2)
+	tee(sequenciaNumeros(ctx, 1, 10), saida1, saida2)
 	wg.Wait()
 
 	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
@@ -358,7 +385,7 @@ func main() {
 	wg.Go(func() { trabalhador(1, saida1, 0) })
 	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
 
-	teeComTimeout(sequenciaNumeros(1, 5), 100*time.Millisecond, saida1, saida2)
+	teeComTimeout(sequenciaNumeros(ctx, 1, 5), 100*time.Millisecond, saida1, saida2)
 	wg.Wait()
 }
 ```
@@ -419,19 +446,22 @@ Escrever em um canal fechado causa um _panic_, então a saída só pode ser fech
 
 Repare na _goroutine_ que espera em `wg.Wait()` e fecha a saída quando a última entrada acaba.
 
-> **Atenção:** estes geradores não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 2](#parte-2--encerrando-goroutines).
+O `context.Context` vai para os geradores e para o próprio fan-in. Cada _goroutine_ do fan-in envia dentro de um `select` com `ctx.Done()`, então se o consumidor cancelar elas saem em vez de ficarem presas no envio, e o `WaitGroup` chega a zero do mesmo jeito. Sem isso, cancelar os geradores não bastaria: as _goroutines_ do fan-in ficariam bloqueadas com um valor na mão que ninguém vai ler.
 
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
 
 // fanin combina vários canais de entrada em um único canal de saída.
-// Utiliza um WaitGroup para saber quando todos os canais de entrada foram processados.
-func fanin(entradas ...<-chan int) <-chan int {
+// Utiliza um WaitGroup para saber quando todos os canais de entrada foram
+// processados. Cada envio disputa com ctx.Done(), então as goroutines saem
+// se o consumidor cancelar em vez de ficarem presas no envio.
+func fanin(ctx context.Context, entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
 	var wg sync.WaitGroup
 
@@ -439,7 +469,11 @@ func fanin(entradas ...<-chan int) <-chan int {
 		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
 		wg.Go(func() {
 			for valor := range entrada {
-				saida <- valor
+				select {
+				case saida <- valor:
+				case <-ctx.Done():
+					return
+				}
 			}
 		})
 	}
@@ -454,23 +488,30 @@ func fanin(entradas ...<-chan int) <-chan int {
 }
 
 // sequenciaNumeros cria um canal que envia uma sequência de números de inicial a final.
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	// Combina três canais de sequência em um único canal
-	canal := fanin(
-		sequenciaNumeros(1, 10),
-		sequenciaNumeros(11, 20),
-		sequenciaNumeros(21, 30),
+	canal := fanin(ctx,
+		sequenciaNumeros(ctx, 1, 10),
+		sequenciaNumeros(ctx, 11, 20),
+		sequenciaNumeros(ctx, 21, 30),
 	)
 
 	// Lê e imprime os valores do canal combinado
@@ -480,9 +521,9 @@ func main() {
 
 	// Com um número fixo de entradas, uma única goroutine com select basta
 	// (veja fan_in_select.go)
-	canal = faninSelect(
-		sequenciaNumeros(31, 40),
-		sequenciaNumeros(41, 50),
+	canal = faninSelect(ctx,
+		sequenciaNumeros(ctx, 31, 40),
+		sequenciaNumeros(ctx, 41, 50),
 	)
 	for valor := range canal {
 		fmt.Printf("valor (select): %v\n", valor)
@@ -501,30 +542,39 @@ Quando usar cada uma? Se o número de canais é variável, como em um _slice_ ou
 ```go
 package main
 
+import "context"
+
 // faninSelect combina um número fixo de canais de entrada (aqui, dois) usando
 // uma única goroutine e um select, em vez de uma goroutine por entrada.
 // Como só uma goroutine escreve na saída, ela mesma fecha o canal ao terminar:
 // não é preciso contar ninguém.
-func faninSelect(entrada1, entrada2 <-chan int) <-chan int {
+func faninSelect(ctx context.Context, entrada1, entrada2 <-chan int) <-chan int {
 	saida := make(chan int)
 	go func() {
 		defer close(saida)
 		for entrada1 != nil || entrada2 != nil {
+			var valor int
+			var ok bool
 			select {
-			case valor, ok := <-entrada1:
+			case valor, ok = <-entrada1:
 				if !ok {
 					// Entrada fechada: um canal nil nunca é selecionado,
 					// o que desabilita este case.
 					entrada1 = nil
 					continue
 				}
-				saida <- valor
-			case valor, ok := <-entrada2:
+			case valor, ok = <-entrada2:
 				if !ok {
 					entrada2 = nil
 					continue
 				}
-				saida <- valor
+			case <-ctx.Done():
+				return
+			}
+			select {
+			case saida <- valor:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
@@ -552,6 +602,7 @@ Os trabalhadores são iniciados com `wg.Go`, e outra _goroutine_ espera em `wg.W
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -589,21 +640,27 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	return saida
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// Após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	// Produz uma sequência de 10 valores
-	entrada := sequenciaNumeros(1, 10)
+	entrada := sequenciaNumeros(ctx, 1, 10)
 	// Um grupo de trabalhadores irá processar esses números
 	saida := grupoDeTrabalhadores(entrada, 2)
 
@@ -667,7 +724,7 @@ func main() {
 
 ## Parte 2 · Encerrando goroutines
 
-Os geradores copiados nos exemplos da Parte 1 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
+Os exemplos da Parte 1 já recebem um `context.Context` e saem quando ele é cancelado. Esta parte explica o que está por trás disso: como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
 
 As duas palestras que mais aparecem aqui, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013. Esta parte mostra primeiro o canal `quit` das palestras e depois a forma com `context`, que é a que você vai encontrar em código de hoje.
 
@@ -730,7 +787,7 @@ func main() {
 
 Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina. Dizemos que ela vaza. O coletor de lixo não recolhe _goroutines_, então a memória e os recursos que ela segura ficam presos até o fim do programa. Em um programa curto isso passa despercebido. Em um servidor que roda por meses, é um vazamento de memória.
 
-O gerador `sequenciaNumeros`, usado em vários exemplos, tem esse problema: ele só termina se alguém ler todos os valores. No [exemplo](./cancelamento/cancelamento.go), a função principal lê apenas os três primeiros e para. A _goroutine_ fica presa no envio do quarto valor. O programa mostra isso comparando `runtime.NumGoroutine()` antes e depois.
+Um gerador sem sinal de parada tem esse problema: ele só termina se alguém ler todos os valores. O [exemplo](./cancelamento/cancelamento.go) traz uma versão assim de propósito, a única do repositório, e a função principal lê apenas os três primeiros valores e para. A _goroutine_ fica presa no envio do quarto valor. O programa mostra isso comparando `runtime.NumGoroutine()` antes e depois.
 
 Esse contador é a forma rústica de achar um vazamento, e só funciona porque o programa é pequeno. Desde o Go 1.26, o coletor de lixo consegue apontar a _goroutine_ presa. O perfil `goroutineleak`, do pacote `runtime/pprof`, lista as _goroutines_ bloqueadas em um canal ou mutex que nenhuma _goroutine_ viva ainda alcança, e que por isso nunca vão acordar. É experimental: precisa de `GOEXPERIMENT=goroutineleakprofile` na compilação, e com ele o perfil aparece também em `/debug/pprof/goroutineleak`. Ele não pega tudo. Uma _goroutine_ presa em um canal que outra _goroutine_ viva ainda referencia não conta, porque em tese alguém ainda poderia ler.
 
@@ -1454,6 +1511,7 @@ Como só uma _goroutine_ toca a fila, não há disputa entre produtor e consumid
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -1503,15 +1561,19 @@ func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 
 // sequenciaNumeros, aqui, avisa a cada envio e faz uma pausa de um segundo
 // entre eles, para que o produtor seja mais rápido do que o consumidor.
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 			fmt.Printf("Produtor: Enviou %d\n", i)
 			time.Sleep(1 * time.Second)
 		}
-		close(saida)
 	}()
 	return saida
 }
@@ -1526,7 +1588,10 @@ func leitorLento(entrada <-chan int, pronto chan<- struct{}) {
 }
 
 func main() {
-	valores := sequenciaNumeros(1, 10)
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	valores := sequenciaNumeros(ctx, 1, 10)
 	saida := make(chan int)
 	pronto := make(chan struct{})
 	go leitorLento(saida, pronto)

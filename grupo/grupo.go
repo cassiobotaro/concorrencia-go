@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -38,21 +39,27 @@ func grupoDeTrabalhadores(entrada <-chan int, nTrabalhadores int) <-chan int {
 	return saida
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// Após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	// Produz uma sequência de 10 valores
-	entrada := sequenciaNumeros(1, 10)
+	entrada := sequenciaNumeros(ctx, 1, 10)
 	// Um grupo de trabalhadores irá processar esses números
 	saida := grupoDeTrabalhadores(entrada, 2)
 

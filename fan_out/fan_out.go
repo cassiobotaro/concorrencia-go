@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -30,19 +31,25 @@ func fanout(entrada <-chan int, n int) {
 	wg.Wait()
 }
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
 	// Três trabalhadores dividem entre si os dez valores da sequência
-	fanout(sequenciaNumeros(1, 10), 3)
+	fanout(sequenciaNumeros(ctx, 1, 10), 3)
 }
