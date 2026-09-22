@@ -39,7 +39,6 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
   - [👷 Grupo de Trabalhadores (pool of workers)](#-grupo-de-trabalhadores-pool-of-workers)
   - [📨 Requisição e resposta](#-requisição-e-resposta)
 - [Parte 2 · Encerrando goroutines](#parte-2--encerrando-goroutines)
-  - [🛑 Vazamento de goroutines e context](#-vazamento-de-goroutines-e-context)
   - [🤝 Parada com confirmação](#-parada-com-confirmação)
   - [🧩 Combinar sinais de parada (or-channel)](#-combinar-sinais-de-parada-or-channel)
 - [Parte 3 · Controlando o ritmo](#parte-3--controlando-o-ritmo)
@@ -723,95 +722,11 @@ func main() {
 
 ## Parte 2 · Encerrando goroutines
 
-Os exemplos da Parte 1 já recebem um `context.Context` e saem quando ele é cancelado. Esta parte explica o que está por trás disso: como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
+Os exemplos da Parte 1 já recebem um `context.Context` e saem quando ele é cancelado. O motivo é o vazamento. Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler nunca termina, o coletor de lixo não recolhe _goroutines_, e a memória e os recursos que ela segura ficam presos até o fim do programa. Em um servidor que roda por meses, isso é um vazamento de memória. Desde o Go 1.26 dá para encontrá-los: o perfil `goroutineleak`, do pacote `runtime/pprof`, lista as _goroutines_ bloqueadas em um canal ou mutex que nenhuma _goroutine_ viva alcança. É experimental, atrás de `GOEXPERIMENT=goroutineleakprofile`, e aparece também em `/debug/pprof/goroutineleak`. Para ir mais fundo em `context`, veja [este repositório](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+Esta parte trata do que vem depois de mandar parar: como saber que a _goroutine_ parou e como juntar vários motivos de parada em um só.
 
 As duas palestras que mais aparecem aqui, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013. Esta parte mostra a forma com `context`, que é a que você vai encontrar em código de hoje, e cita a forma das palestras onde ela ajuda a entender o que o `context` faz por dentro.
-
-### 🛑 Vazamento de goroutines e context
-
-Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler (ou escrever) nunca termina. Dizemos que ela vaza. O coletor de lixo não recolhe _goroutines_, então a memória e os recursos que ela segura ficam presos até o fim do programa. Em um programa curto isso passa despercebido. Em um servidor que roda por meses, é um vazamento de memória.
-
-Um gerador sem sinal de parada tem esse problema: ele só termina se alguém ler todos os valores. O [exemplo](./cancelamento/cancelamento.go) traz uma versão assim de propósito, a única do repositório, e a função principal lê apenas os três primeiros valores e para. A _goroutine_ fica presa no envio do quarto valor. O programa mostra isso comparando `runtime.NumGoroutine()` antes e depois.
-
-Esse contador é a forma rústica de achar um vazamento, e só funciona porque o programa é pequeno. Desde o Go 1.26, o coletor de lixo consegue apontar a _goroutine_ presa. O perfil `goroutineleak`, do pacote `runtime/pprof`, lista as _goroutines_ bloqueadas em um canal ou mutex que nenhuma _goroutine_ viva ainda alcança, e que por isso nunca vão acordar. É experimental: precisa de `GOEXPERIMENT=goroutineleakprofile` na compilação, e com ele o perfil aparece também em `/debug/pprof/goroutineleak`. Ele não pega tudo. Uma _goroutine_ presa em um canal que outra _goroutine_ viva ainda referencia não conta, porque em tese alguém ainda poderia ler.
-
-A solução é fazer cada envio disputar, em um `select`, com um sinal de cancelamento. Na palestra de Pike esse sinal é um canal `quit`, que quem consome fecha quando não quer mais valores. O costume em Go é receber um `context.Context` e observar `ctx.Done()`, que é exatamente isso: um canal fechado quando o contexto é cancelado. A vantagem é que o mesmo contexto atravessa várias funções e etapas de um _pipeline_, carrega prazos (`context.WithTimeout`) e cancela todo mundo de uma vez. Para ir mais fundo, veja o repositório sobre [context](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
-
-Na versão cancelável, a função principal lê três valores e chama `cancel()`. Sem essa chamada, a _goroutine_ ficaria presa exatamente como a primeira.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"runtime"
-)
-
-// sequenciaNumeros é o gerador usado nos outros exemplos. Ele não é
-// cancelável: se o consumidor parar de ler antes do fim, o envio bloqueia
-// para sempre e a goroutine vaza.
-func sequenciaNumeros(inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		for i := inicial; i <= final; i++ {
-			saida <- i
-		}
-		close(saida)
-	}()
-	return saida
-}
-
-// sequenciaNumerosCancelavel faz cada envio disputar com ctx.Done():
-// se o contexto for cancelado, a goroutine desiste do envio e termina.
-func sequenciaNumerosCancelavel(ctx context.Context, inicial, final int) <-chan int {
-	saida := make(chan int)
-	go func() {
-		defer close(saida)
-		for i := inicial; i <= final; i++ {
-			select {
-			case saida <- i:
-			case <-ctx.Done():
-				fmt.Println("gerador: cancelado, encerrando")
-				return
-			}
-		}
-	}()
-	return saida
-}
-
-func main() {
-	antes := runtime.NumGoroutine()
-
-	// Sem cancelamento: lemos só os 3 primeiros valores e paramos.
-	valores := sequenciaNumeros(1, 1000)
-	for range 3 {
-		fmt.Printf("valor: %v\n", <-valores)
-	}
-	// Ninguém mais vai ler de `valores`: a goroutine do gerador está presa
-	// em `saida <- 4` e continuará assim até o programa terminar.
-	fmt.Printf("goroutines presas: %d\n", runtime.NumGoroutine()-antes)
-
-	// Com cancelamento: lemos os 3 primeiros valores e cancelamos.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancelaveis := sequenciaNumerosCancelavel(ctx, 1, 1000)
-	for range 3 {
-		fmt.Printf("valor: %v\n", <-cancelaveis)
-	}
-	// Sem esta chamada a goroutine ficaria presa, como a anterior.
-	cancel()
-	// O gerador fecha o canal ao sair: drenar até o fechamento garante que
-	// ele terminou de fato.
-	for range cancelaveis {
-	}
-	fmt.Println("gerador cancelável encerrado")
-
-	// Parada com confirmação (veja context_errgroup.go)
-	paradaComErrgroup()
-	// Vários sinais de parada combinados em um só (veja qualquer.go)
-	combinarSinais()
-}
-```
 
 ### 🤝 Parada com confirmação
 
@@ -1651,7 +1566,7 @@ func comMutex() {
 
 Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com um prazo em `context.WithTimeout`, o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
 
-A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o [cancelamento](#-vazamento-de-goroutines-e-context) da Parte 2 aplicado ao padrão.
+A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o cancelamento da [Parte 2](#parte-2--encerrando-goroutines) aplicado ao padrão.
 
 Repare no canal com buffer de tamanho `len(replicas)`. Mesmo com o cancelamento, uma perdedora pode terminar entre a chegada da vencedora e o `cancel()`. Com um canal sem buffer ela ficaria bloqueada no envio para sempre, pois ninguém mais vai ler. Com uma vaga por réplica, ela deposita a resposta e termina.
 

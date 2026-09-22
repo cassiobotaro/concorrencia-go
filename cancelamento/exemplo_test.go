@@ -4,15 +4,6 @@ func Example() {
 	main()
 
 	// Output:
-	// valor: 1
-	// valor: 2
-	// valor: 3
-	// goroutines presas: 1
-	// valor: 1
-	// valor: 2
-	// valor: 3
-	// gerador: cancelado, encerrando
-	// gerador cancelável encerrado
 	// Bia 0
 	// Bia 1
 	// Bia 2
