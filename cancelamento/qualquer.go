@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
 	"time"
 )
@@ -28,26 +30,45 @@ func qualquer(canais ...<-chan struct{}) <-chan struct{} {
 	return saida
 }
 
-func combinarSinais() {
-	// Três origens independentes para o sinal de parada
-	ctxRequisicao, cancelarRequisicao := context.WithCancel(context.Background())
-	defer cancelarRequisicao()
-	ctxPrazo, cancelarPrazo := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancelarPrazo()
-	desligar := make(chan struct{}) // seria fechado ao receber um sinal do sistema operacional
-
-	parar := qualquer(ctxRequisicao.Done(), ctxPrazo.Done(), desligar)
-
+// trabalharAte imprime a cada 100ms até o canal parar ser fechado. Um
+// único case de parada, não importa quantas origens existam.
+func trabalharAte(parar <-chan struct{}) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		// Um único case de parada, não importa quantas origens existam
 		select {
 		case <-ticker.C:
 			fmt.Println("trabalhando...")
 		case <-parar:
-			fmt.Println("um dos sinais de parada chegou (aqui, o prazo de 250ms)")
 			return
 		}
 	}
+}
+
+func combinarSinais() {
+	// Três origens para o sinal de parada, e as três são contextos: um
+	// deriva do outro, e cancelar o pai cancela os filhos.
+	ctx, pararNoSinal := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer pararNoSinal()
+	ctx, cancelarRequisicao := context.WithCancel(ctx) // um handler HTTP teria r.Context()
+	defer cancelarRequisicao()
+	ctx, cancelarPrazo := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancelarPrazo()
+
+	trabalharAte(ctx.Done())
+	fmt.Println("contexto cancelado:", ctx.Err())
+
+	// qualquer fica para o que não é contexto. Aqui, um canal que outra
+	// goroutine fecha ao terminar; a goroutine é andaime, simula um colega
+	// que acaba antes do prazo.
+	ctx, cancelar := context.WithTimeout(context.Background(), time.Second)
+	defer cancelar()
+	colegaTerminou := make(chan struct{})
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		close(colegaTerminou)
+	}()
+
+	trabalharAte(qualquer(ctx.Done(), colegaTerminou))
+	fmt.Println("um dos sinais de parada chegou (aqui, o colega terminou)")
 }

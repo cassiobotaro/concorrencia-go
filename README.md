@@ -1102,15 +1102,15 @@ func paradaComErrgroup() {
 
 **Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_, do mesmo livro citado abaixo, que é outra técnica. Ele embrulha a leitura de um canal para que ela também respeite um sinal de parada.
 
-Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em vez de um `select` com um `case` por origem em cada _goroutine_, a função [`qualquer`](./cancelamento/qualquer.go) combina os canais em um só, que é fechado quando o primeiro deles fechar.
+Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em 2017, quando o livro citado abaixo saiu, cada um desses era um canal diferente, e a resposta era combinar os canais em um só. Hoje os três são contextos. O da requisição sempre foi, um _handler_ HTTP recebe `r.Context()`. O prazo é `context.WithTimeout`. E desde o Go 1.16, `signal.NotifyContext` devolve um contexto cancelado quando o sinal do sistema chega. Quando as origens são contextos, a resposta é derivar um do outro. O filho é cancelado quando o pai é, e a _goroutine_ fica com um único `case`, o `ctx.Done()`. A primeira metade do [exemplo](./cancelamento/qualquer.go) faz isso com as três origens.
+
+O que sobra para combinar à mão é o que não é contexto: o canal `pronto` de outra _goroutine_, a saída de um gerador, qualquer `chan struct{}` fechado como sinal. A função `qualquer` combina esses canais em um só, que é fechado quando o primeiro deles fechar. Na segunda metade do exemplo, a _goroutine_ para quando o contexto acabar ou quando um colega terminar, o que vier primeiro.
 
 A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Ela toma dois cuidados. O primeiro é o `sync.Once`, que garante um único `close` mesmo que dois sinais cheguem juntos, já que fechar um canal duas vezes causa _panic_. O segundo é que cada _goroutine_ também observa a própria saída. Assim, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem.
 
-Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_".
+Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_". Para o sentido inverso, ligar um contexto a algo que não entende contextos, `context.AfterFunc(ctx, f)` roda `f` quando o contexto é cancelado, desde o Go 1.21.
 
-Se todos os sinais são contextos, prefira derivar um do outro, como em `context.WithTimeout(ctxRequisicao, ...)`. O contexto filho já é cancelado quando o pai é. Combinar canais vale a pena quando as origens são independentes.
-
-De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), que fecha um canal `quit` para encerrar as _goroutines_ do seu `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
+De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), cujo código fecha um canal `quit` para encerrar as _goroutines_ do `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
 
 ```go
 package main
@@ -1118,6 +1118,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"sync"
 	"time"
 )
@@ -1143,28 +1145,47 @@ func qualquer(canais ...<-chan struct{}) <-chan struct{} {
 	return saida
 }
 
-func combinarSinais() {
-	// Três origens independentes para o sinal de parada
-	ctxRequisicao, cancelarRequisicao := context.WithCancel(context.Background())
-	defer cancelarRequisicao()
-	ctxPrazo, cancelarPrazo := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancelarPrazo()
-	desligar := make(chan struct{}) // seria fechado ao receber um sinal do sistema operacional
-
-	parar := qualquer(ctxRequisicao.Done(), ctxPrazo.Done(), desligar)
-
+// trabalharAte imprime a cada 100ms até o canal parar ser fechado. Um
+// único case de parada, não importa quantas origens existam.
+func trabalharAte(parar <-chan struct{}) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		// Um único case de parada, não importa quantas origens existam
 		select {
 		case <-ticker.C:
 			fmt.Println("trabalhando...")
 		case <-parar:
-			fmt.Println("um dos sinais de parada chegou (aqui, o prazo de 250ms)")
 			return
 		}
 	}
+}
+
+func combinarSinais() {
+	// Três origens para o sinal de parada, e as três são contextos: um
+	// deriva do outro, e cancelar o pai cancela os filhos.
+	ctx, pararNoSinal := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer pararNoSinal()
+	ctx, cancelarRequisicao := context.WithCancel(ctx) // um handler HTTP teria r.Context()
+	defer cancelarRequisicao()
+	ctx, cancelarPrazo := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancelarPrazo()
+
+	trabalharAte(ctx.Done())
+	fmt.Println("contexto cancelado:", ctx.Err())
+
+	// qualquer fica para o que não é contexto. Aqui, um canal que outra
+	// goroutine fecha ao terminar; a goroutine é andaime, simula um colega
+	// que acaba antes do prazo.
+	ctx, cancelar := context.WithTimeout(context.Background(), time.Second)
+	defer cancelar()
+	colegaTerminou := make(chan struct{})
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		close(colegaTerminou)
+	}()
+
+	trabalharAte(qualquer(ctx.Done(), colegaTerminou))
+	fmt.Println("um dos sinais de parada chegou (aqui, o colega terminou)")
 }
 ```
 
