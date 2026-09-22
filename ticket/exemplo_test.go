@@ -11,7 +11,7 @@ import (
 // intervalos, pois só o primeiro ticket sai de imediato.
 func Example() {
 	tickets := make(chan ticket)
-	trabalhos := make(chan Trabalho)
+	trabalhos := make(chan func())
 	pronto := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())

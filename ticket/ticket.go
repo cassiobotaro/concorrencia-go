@@ -6,12 +6,9 @@ import (
 	"time"
 )
 
-type (
-	Trabalho func()
-	ticket   int
-)
+type ticket int
 
-func trabalhador(tickets <-chan ticket, trabalhos <-chan Trabalho) {
+func trabalhador(tickets <-chan ticket, trabalhos <-chan func()) {
 	for {
 		// Lê o trabalho primeiro: se o canal foi fechado, encerra
 		// sem gastar um ticket.
@@ -52,7 +49,7 @@ func bilheteria(ctx context.Context, tickets chan<- ticket, timeout time.Duratio
 
 func main() {
 	tickets := make(chan ticket)
-	trabalhos := make(chan Trabalho)
+	trabalhos := make(chan func())
 	pronto := make(chan struct{})
 
 	ctx, cancel := context.WithCancel(context.Background())
