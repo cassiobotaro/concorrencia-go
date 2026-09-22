@@ -8,6 +8,8 @@ A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perde
 
 Repare no canal com buffer de tamanho `len(replicas)`. Mesmo com o cancelamento, uma perdedora pode terminar entre a chegada da vencedora e o `cancel()`. Com um canal sem buffer ela ficaria bloqueada no envio para sempre, pois ninguém mais vai ler. Com uma vaga por réplica, ela deposita a resposta e termina.
 
+Repare também que uma réplica que falha envia o erro pelo mesmo canal, em vez de sair calada. O `First` de Pike não tem erro, então não precisa disso. Aqui, se as falhas fossem ignoradas e todas as réplicas falhassem, ninguém enviaria nada e `primeiro` esperaria para sempre, pois o `ctx.Done()` de um `context.Background()` nunca chega. Por isso o laço espera uma resposta por réplica: a primeira sem erro vence, e se todas falharem o último erro é devolvido. O `exemplo_test.go` cobre esse caminho com duas réplicas que só falham.
+
 No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um prazo de 20ms. O prazo vem em um `context.WithTimeout`, e `primeiro` o repassa às réplicas, então o mesmo `ctx.Done()` que encerra a espera encerra também as réplicas.
 
 O exemplo inteiro está em [`primeiro.go`](./primeiro.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).

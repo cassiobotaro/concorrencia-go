@@ -21,9 +21,16 @@ func replica(nome string) func(context.Context, string) (string, error) {
 	}
 }
 
+// resultado é o que cada réplica devolve: a resposta ou o motivo da falha.
+type resultado struct {
+	resposta string
+	err      error
+}
+
 // primeiro envia a mesma consulta a todas as réplicas e devolve a primeira
 // resposta que chegar. Ao retornar, cancela o contexto das outras, para
-// que as perdedoras parem de trabalhar em vez de responder à toa.
+// que as perdedoras parem de trabalhar em vez de responder à toa. Se todas
+// falharem, devolve o último erro.
 func primeiro(ctx context.Context, consulta string, replicas ...func(context.Context, string) (string, error)) (string, error) {
 	ctx, cancelar := context.WithCancel(ctx)
 	defer cancelar()
@@ -31,21 +38,30 @@ func primeiro(ctx context.Context, consulta string, replicas ...func(context.Con
 	// O buffer tem uma vaga por réplica. Uma perdedora pode terminar entre
 	// a chegada da vencedora e o cancel, e sem a vaga ficaria presa no
 	// envio para sempre, pois ninguém mais vai ler do canal.
-	respostas := make(chan string, len(replicas))
+	resultados := make(chan resultado, len(replicas))
 	for _, r := range replicas {
 		go func() {
-			if resposta, err := r(ctx, consulta); err == nil {
-				respostas <- resposta
-			}
+			resposta, err := r(ctx, consulta)
+			resultados <- resultado{resposta, err}
 		}()
 	}
 
-	select {
-	case resposta := <-respostas:
-		return resposta, nil
-	case <-ctx.Done():
-		return "", ctx.Err()
+	// Uma falha também é uma resposta, e precisa ser contada. Se as falhas
+	// fossem ignoradas e todas as réplicas falhassem, ninguém enviaria nada
+	// e a espera abaixo nunca acabaria.
+	var err error
+	for range replicas {
+		select {
+		case r := <-resultados:
+			if r.err == nil {
+				return r.resposta, nil
+			}
+			err = r.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
+	return "", err
 }
 
 func main() {

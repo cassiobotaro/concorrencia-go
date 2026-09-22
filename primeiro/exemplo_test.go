@@ -19,6 +19,19 @@ func comLatencia(nome string, latencia time.Duration) func(context.Context, stri
 	}
 }
 
+// comErro cria uma réplica que falha depois de `latencia`, como um servidor
+// fora do ar.
+func comErro(nome string, latencia time.Duration) func(context.Context, string) (string, error) {
+	return func(ctx context.Context, consulta string) (string, error) {
+		select {
+		case <-time.After(latencia):
+			return "", fmt.Errorf("%s falhou", nome)
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+}
+
 func Example() {
 	replicas := []func(context.Context, string) (string, error){
 		comLatencia("réplica lenta", 300*time.Millisecond),
@@ -35,7 +48,16 @@ func Example() {
 	resposta, err = primeiro(ctx, "golang", replicas...)
 	fmt.Printf("%q %v\n", resposta, err)
 
+	// Se todas falharem, primeiro devolve o último erro em vez de esperar
+	// para sempre por uma resposta que não vem
+	resposta, err = primeiro(context.Background(), "golang",
+		comErro("réplica 1", 0),
+		comErro("réplica 2", 50*time.Millisecond),
+	)
+	fmt.Printf("%q %v\n", resposta, err)
+
 	// Output:
 	// réplica rápida respondeu a "golang" <nil>
 	// "" context deadline exceeded
+	// "" réplica 2 falhou
 }
