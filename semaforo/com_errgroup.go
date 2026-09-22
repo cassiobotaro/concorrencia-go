@@ -32,12 +32,15 @@ func executarTarefasErrgroup(tarefas, limite, falha int) error {
 			}
 
 			fmt.Printf("errgroup: tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
-			time.Sleep(100 * time.Millisecond)
-			ativas.Add(-1)
+			defer ativas.Add(-1)
 
+			// A falha vem antes do trabalho, de propósito. Se ela viesse
+			// depois, as vizinhas terminariam no mesmo instante e poderiam
+			// liberar vaga antes de o cancelamento chegar às próximas.
 			if i+1 == falha {
 				return fmt.Errorf("tarefa %d falhou", i+1)
 			}
+			time.Sleep(100 * time.Millisecond)
 			return nil
 		})
 	}
