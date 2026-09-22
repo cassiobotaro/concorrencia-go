@@ -34,14 +34,19 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 		defer close(saida)
 		buf := make([]req, 0, tamanhoLote)
 
-		ticker := time.NewTicker(intervalo)
-		defer ticker.Stop()
+		// O prazo conta a partir do primeiro item de cada lote: o Timer é
+		// armado quando o lote começa e parado quando ele sai. Um Ticker
+		// marcaria o tempo por conta própria, e um lote começado logo antes
+		// do tick sairia quase vazio. Nasce parado porque ainda não há lote.
+		prazo := time.NewTimer(intervalo)
+		prazo.Stop()
 
 		// descarregar envia o lote atual, se houver algo nele
 		descarregar := func() {
 			if len(buf) == 0 {
 				return
 			}
+			prazo.Stop()
 			saida <- buf
 			// Um novo slice é criado em vez de reaproveitar com buf[:0]:
 			// o consumidor pode ainda estar lendo o lote enviado, e reutilizar
@@ -59,7 +64,10 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 					// para o loop quando o canal de entrada for fechado
 					return
 				}
-				// Adiciona o item no buffer
+				// Primeiro item do lote: começa a contar o prazo
+				if len(buf) == 0 {
+					prazo.Reset(intervalo)
+				}
 				buf = append(buf, item)
 				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
@@ -67,7 +75,7 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 				}
 
 			// Se o intervalo passou, descarrega o que tiver no buffer
-			case <-ticker.C:
+			case <-prazo.C:
 				descarregar()
 
 			// Se receber um sinal de descarga, descarrega o que tiver no buffer
