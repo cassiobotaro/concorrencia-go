@@ -12,7 +12,7 @@ O exemplo inteiro está em [`semaforo.go`](./semaforo.go) e o teste em [`exemplo
 
 ## E com errgroup?
 
-O canal de vagas e o `WaitGroup` fazem duas coisas que o padrão sempre precisa: limitar e esperar. O pacote [`golang.org/x/sync/errgroup`](https://pkg.go.dev/golang.org/x/sync/errgroup) junta as duas em um tipo só e acrescenta a terceira, que os exemplos até aqui ignoraram: o erro. `g.SetLimit(3)` é o canal de três vagas. `g.Go` dispara a tarefa, e bloqueia quando as vagas acabam. `g.Wait` espera todas, como o `WaitGroup`, e devolve o primeiro erro que alguma tarefa retornou. Com `errgroup.WithContext`, esse primeiro erro cancela um contexto, e as tarefas que ainda não começaram podem desistir olhando `ctx.Err()`.
+O canal de vagas e o `WaitGroup` fazem duas coisas que o padrão sempre precisa: limitar e esperar. O pacote [`golang.org/x/sync/errgroup`](https://pkg.go.dev/golang.org/x/sync/errgroup) junta as duas em um tipo só e acrescenta a terceira, que os outros exemplos ignoram: o erro. `g.SetLimit(3)` é o canal de três vagas. `g.Go` dispara a tarefa, e bloqueia quando as vagas acabam. `g.Wait` espera todas, como o `WaitGroup`, e devolve o primeiro erro que alguma tarefa retornou. Com `errgroup.WithContext`, esse primeiro erro cancela um contexto, e as tarefas que ainda não começaram podem desistir olhando `ctx.Err()`.
 
 A [versão abaixo](./com_errgroup.go) faz isso. Com três vagas e a tarefa 2 falhando, as tarefas 1 a 3 começam, e as outras sete são canceladas antes de começar, porque quando elas conseguem uma vaga o contexto já foi cancelado. A tarefa que falha é andaime, existe só para mostrar o cancelamento.
 

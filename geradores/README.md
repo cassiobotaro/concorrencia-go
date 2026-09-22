@@ -1,6 +1,6 @@
 # 🆕 Geradores
 
-**Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da seção de [contrapressão](../backpressure/README.md).
+**Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da [contrapressão](../backpressure/README.md).
 
 Um gerador é uma função que dispara uma _goroutine_ para escrever uma sequência de valores em um canal, e devolve esse canal a quem a chamou. O produtor roda em paralelo com o consumidor. Isso importa quando produzir custa caro, como ler de disco ou de rede, e quando os valores vão atravessar um [_pipeline_](../pipeline/README.md) de etapas concorrentes.
 

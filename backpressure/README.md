@@ -2,7 +2,7 @@
 
 **Também conhecido como:** _backpressure_, _bounded queue_ (fila limitada).
 
-Contrapressão (_backpressure_) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. Aqui nada é descartado, e quem espera é o produtor. A resposta oposta é a da [janela deslizante](../janelas_deslizantes/README.md), no fim desta parte, em que o produtor segue livre e os valores antigos são descartados.
+Contrapressão (_backpressure_) é o mecanismo pelo qual um consumidor lento faz o produtor diminuir o ritmo, em vez de deixar o trabalho se acumular sem limite. Aqui nada é descartado, e quem espera é o produtor. A resposta oposta é a da [janela deslizante](../janelas_deslizantes/README.md), em que o produtor segue livre e os valores antigos são descartados.
 
 Em Go esse mecanismo já vem embutido nos canais. A capacidade do canal é a folga máxima entre produtor e consumidor. Quando ela acaba, o envio bloqueia. O bloqueio propaga a lentidão do consumidor para trás, etapa por etapa, até chegar em quem gera os dados.
 

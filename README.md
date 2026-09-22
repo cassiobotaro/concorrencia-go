@@ -14,7 +14,7 @@ Os `fmt.Print` dos exemplos estão ali só para você enxergar a execução e n�
 
 Cada pasta é um programa independente, que você executa com `go run ./pipeline/`, e tem um `README.md` com a explicação do padrão. Cada uma tem também um `exemplo_test.go` com uma função `Example` que confere a saída. Ela usa `// Output:` quando a ordem das linhas é fixa e `// Unordered output:` quando só o conjunto é previsível. Para rodar tudo com o detector de corrida, use `go test -race ./...`.
 
-Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguagens, por isso cada seção traz uma linha "Também conhecido como". Dois pedem cuidado: "produtor" e "consumidor" são papéis, não padrões, e quase todo exemplo tem os dois. Aparecem como nomes alternativos de [Geradores](./geradores/README.md) e [Trabalhador](./trabalhador/README.md) porque nessas seções cada papel aparece sozinho.
+Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguagens, por isso o README de cada padrão traz uma linha "Também conhecido como". Dois pedem cuidado: "produtor" e "consumidor" são papéis, não padrões, e quase todo exemplo tem os dois. Aparecem como nomes alternativos de [Geradores](./geradores/README.md) e [Trabalhador](./trabalhador/README.md) porque nesses dois cada papel aparece sozinho.
 
 ## Padrões
 
