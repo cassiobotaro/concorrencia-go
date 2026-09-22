@@ -1,10 +1,10 @@
 # 🚥 Semáforo (paralelismo limitado)
 
-**Também conhecido como:** _bounded parallelism_, limite de _goroutines_ em voo.
+**Também conhecido como:** _bounded parallelism_, limite de gorrotinas em voo.
 
-Um canal com buffer de capacidade `n` funciona como um semáforo. Enviar ocupa uma vaga, e bloqueia quando todas estão ocupadas. Receber libera uma vaga. Com isso dá para limitar quantas _goroutines_ executam um trecho ao mesmo tempo sem criar um grupo fixo. Cada tarefa tem sua própria _goroutine_, mas só `n` avançam de cada vez. A técnica aparece com o nome de _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+Um canal com buffer de capacidade `n` funciona como um semáforo. Enviar ocupa uma vaga, e bloqueia quando todas estão ocupadas. Receber libera uma vaga. Com isso dá para limitar quantas gorrotinas executam um trecho ao mesmo tempo sem criar um grupo fixo. Cada tarefa tem sua própria gorrotina, mas só `n` avançam de cada vez. A técnica aparece com o nome de _bounded parallelism_ no artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
 
-Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](../grupo/README.md) fixa o número de _goroutines_. O [sistema de ticket](../ticket/README.md) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
+Qual a diferença para os padrões vizinhos? O [grupo de trabalhadores](../grupo/README.md) fixa o número de gorrotinas. O [sistema de ticket](../ticket/README.md) limita a taxa ao longo do tempo. O semáforo limita quantas tarefas executam ao mesmo tempo. Este é um dos poucos casos em que o buffer do canal não é um ajuste fino, porque a capacidade do canal é o próprio limite.
 
 No exemplo, dez tarefas são disparadas de uma vez, mas o semáforo tem três vagas. A saída mostra que o número de tarefas ativas nunca passa de três. O contador atômico (`sync/atomic`) serve apenas para observar isso e não faz parte do padrão. O `sync.WaitGroup` aguarda o término de todas as tarefas.
 

@@ -2,7 +2,7 @@
 
 **Também conhecido como:** consumidor, _sink_. O segundo só vale quando o trabalhador é o último estágio, isto é, quando não repassa nada adiante.
 
-Um trabalhador é uma _goroutine_ que recebe valores de um canal e os processa.
+Um trabalhador é uma gorrotina que recebe valores de um canal e os processa.
 
 No exemplo, a função principal envia dez valores inteiros pelo canal de entrada, e um trabalhador os processa.
 

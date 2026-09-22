@@ -8,14 +8,14 @@ import (
 
 // fanin combina vários canais de entrada em um único canal de saída.
 // Usa um WaitGroup para saber quando todos os canais de entrada foram
-// processados. Cada envio disputa com ctx.Done(), então as goroutines saem
+// processados. Cada envio disputa com ctx.Done(), então as gorrotinas saem
 // se o consumidor cancelar em vez de ficarem presas no envio.
 func fanin(ctx context.Context, entradas ...<-chan int) <-chan int {
 	saida := make(chan int)
 	var wg sync.WaitGroup
 
 	for _, entrada := range entradas {
-		// Uma goroutine por entrada; o WaitGroup é avisado quando ela termina
+		// Uma gorrotina por entrada; o WaitGroup é avisado quando ela termina
 		wg.Go(func() {
 			for valor := range entrada {
 				select {
@@ -67,7 +67,7 @@ func main() {
 		fmt.Printf("valor: %v\n", valor)
 	}
 
-	// Com um número fixo de entradas, uma única goroutine com select basta
+	// Com um número fixo de entradas, uma única gorrotina com select basta
 	// (veja fan_in_select.go)
 	canal = faninSelect(ctx,
 		sequenciaNumeros(ctx, 31, 40),

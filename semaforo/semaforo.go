@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// executarTarefas dispara uma goroutine por tarefa, mas deixa no máximo
+// executarTarefas dispara uma gorrotina por tarefa, mas deixa no máximo
 // `limite` delas executarem ao mesmo tempo.
 func executarTarefas(tarefas, limite int) {
 	// Um canal com buffer funciona como semáforo: cada valor no buffer é uma
@@ -19,7 +19,7 @@ func executarTarefas(tarefas, limite int) {
 	// ele não faz parte do padrão.
 	var ativas atomic.Int32
 
-	// Cada tarefa tem sua própria goroutine, mas só `limite` avançam por vez
+	// Cada tarefa tem sua própria gorrotina, mas só `limite` avançam por vez
 	for i := range tarefas {
 		wg.Go(func() {
 			sem <- struct{}{}        // ocupa uma vaga (bloqueia se não houver)

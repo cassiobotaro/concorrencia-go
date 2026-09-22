@@ -12,7 +12,7 @@ func Example() {
 	}
 
 	// Parando antes do fim: cancela e drena até o canal fechar, o que
-	// prova que a goroutine do gerador terminou.
+	// prova que a gorrotina do gerador terminou.
 	valores := sequenciaNumeros(ctx, 1, 1000)
 	fmt.Printf("valor: %v\n", <-valores)
 	cancelar()

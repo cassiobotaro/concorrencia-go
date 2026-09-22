@@ -38,7 +38,7 @@ func paradaComErrgroup() {
 	for range 3 {
 		fmt.Println(<-saida)
 	}
-	// cancelar manda parar. Wait bloqueia até a goroutine retornar e traz
+	// cancelar manda parar. Wait bloqueia até a gorrotina retornar e traz
 	// o erro dela: o pedido desce pelo contexto e a resposta sobe pelo
 	// errgroup.
 	cancelar()

@@ -3,8 +3,8 @@ package main
 import "context"
 
 // faninSelect combina um número fixo de canais de entrada (aqui, dois) usando
-// uma única goroutine e um select, em vez de uma goroutine por entrada.
-// Como só uma goroutine escreve na saída, ela mesma fecha o canal ao terminar:
+// uma única gorrotina e um select, em vez de uma gorrotina por entrada.
+// Como só uma gorrotina escreve na saída, ela mesma fecha o canal ao terminar:
 // não é preciso contar ninguém.
 func faninSelect(ctx context.Context, entrada1, entrada2 <-chan int) <-chan int {
 	saida := make(chan int)

@@ -7,7 +7,7 @@ import (
 
 // contadorMutex resolve o mesmo problema serializando o acesso ao mapa.
 // Quando tudo o que se precisa é proteger um dado, esta versão é mais
-// simples e mais clara do que uma goroutine dona do estado.
+// simples e mais clara do que uma gorrotina dona do estado.
 type contadorMutex struct {
 	mu       sync.Mutex
 	contagem map[string]int

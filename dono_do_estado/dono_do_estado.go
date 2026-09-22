@@ -12,8 +12,8 @@ type consulta struct {
 	resposta chan<- int
 }
 
-// contador é a goroutine dona do estado: só ela toca o mapa `contagem`.
-// As demais goroutines pedem alterações e leituras pelos canais.
+// contador é a gorrotina dona do estado: só ela toca o mapa `contagem`.
+// As demais gorrotinas pedem alterações e leituras pelos canais.
 // Termina quando o canal `incrementar` é fechado.
 func contador(incrementar <-chan string, consultar <-chan consulta) {
 	contagem := make(map[string]int)
@@ -39,8 +39,8 @@ func main() {
 		close(pronto)
 	}()
 
-	// Várias goroutines incrementam ao mesmo tempo, sem mutex:
-	// os pedidos são atendidos um por vez pela goroutine dona.
+	// Várias gorrotinas incrementam ao mesmo tempo, sem mutex:
+	// os pedidos são atendidos um por vez pela gorrotina dona.
 	var wg sync.WaitGroup
 	for _, chave := range []string{"gopher", "gopher", "marmota"} {
 		wg.Go(func() {
@@ -57,7 +57,7 @@ func main() {
 		fmt.Printf("dona do estado: %s = %d\n", chave, <-resposta)
 	}
 
-	// Sem mais incrementos: a goroutine dona termina
+	// Sem mais incrementos: a gorrotina dona termina
 	close(incrementar)
 	<-pronto
 

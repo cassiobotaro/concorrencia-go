@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-// sequenciaNumeros gera os inteiros de inicial a final em uma goroutine e
+// sequenciaNumeros gera os inteiros de inicial a final em uma gorrotina e
 // os envia por um canal. Cada envio disputa com ctx.Done(): se o consumidor
-// cancelar o contexto, a goroutine sai em vez de ficar presa no envio.
+// cancelar o contexto, a gorrotina sai em vez de ficar presa no envio.
 func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {

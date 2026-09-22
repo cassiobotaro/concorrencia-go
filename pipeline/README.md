@@ -12,6 +12,6 @@ Repare nas assinaturas. A função `dobro` recebe um `<-chan int` e devolve outr
 
 Os estágios podem ser encadeados. No exemplo, `dobro` é aplicado duas vezes, e cada valor sai multiplicado por quatro.
 
-O mesmo `context.Context` atravessa o gerador e os dois estágios. Cada um faz o envio dentro de um `select` com `ctx.Done()`, como o [gerador](../geradores/README.md). Sem isso, um consumidor que parasse de ler no meio deixaria três _goroutines_ presas, uma por etapa, cada uma bloqueada no envio para a seguinte. Com um único `cancel()` todas saem, e cada uma fecha a própria saída ao sair. É o que o artigo sobre [_pipelines_](https://go.dev/blog/pipelines) chama de cancelamento explícito.
+O mesmo `context.Context` atravessa o gerador e os dois estágios. Cada um faz o envio dentro de um `select` com `ctx.Done()`, como o [gerador](../geradores/README.md). Sem isso, um consumidor que parasse de ler no meio deixaria três gorrotinas presas, uma por etapa, cada uma bloqueada no envio para a seguinte. Com um único `cancel()` todas saem, e cada uma fecha a própria saída ao sair. É o que o artigo sobre [_pipelines_](https://go.dev/blog/pipelines) chama de cancelamento explícito.
 
 O exemplo inteiro está em [`pipeline.go`](./pipeline.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).

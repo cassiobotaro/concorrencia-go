@@ -10,7 +10,7 @@ func elo(esquerda chan<- int, direita <-chan int) {
 func main() {
 	const n = 10000
 
-	// Monta a corrente da esquerda para a direita: cada goroutine fica
+	// Monta a corrente da esquerda para a direita: cada gorrotina fica
 	// bloqueada esperando o valor da vizinha.
 	pontaEsquerda := make(chan int)
 	esquerda := pontaEsquerda
@@ -23,6 +23,6 @@ func main() {
 
 	// Solta o primeiro valor na ponta direita...
 	go func() { direita <- 1 }()
-	// ...e espera ele atravessar as 10 mil goroutines.
+	// ...e espera ele atravessar as 10 mil gorrotinas.
 	fmt.Println(<-pontaEsquerda)
 }

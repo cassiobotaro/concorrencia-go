@@ -14,7 +14,7 @@ O exemplo inteiro está em [`tee.go`](./tee.go) e o teste em [`exemplo_test.go`]
 
 ## Tee com timeout
 
-Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma _goroutine_ para cada envio.
+Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma gorrotina para cada envio.
 
 O `time.After` dentro do laço é recriado a cada envio, e o prazo vale para cada valor em cada saída. Até o Go 1.22, cada chamada deixava um timer vivo até disparar, mesmo depois de o `select` ter escolhido outro `case`, e a recomendação era evitar `time.After` em laço. Desde o Go 1.23, um timer que o programa não referencia mais é recolhido pelo coletor de lixo na hora, desde que o `go.mod` declare `go 1.23` ou mais novo, como o deste repositório. Em código real o prazo costuma chegar de fora, em um `context.Context` criado com `context.WithTimeout`, e o `case` passa a ser `<-ctx.Done()`. A diferença é que o mesmo prazo vale para a operação inteira e atravessa as funções chamadas. O [primeiro a responder](../primeiro/README.md) faz isso.
 

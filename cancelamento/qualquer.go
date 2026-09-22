@@ -22,7 +22,7 @@ func qualquer(canais ...<-chan struct{}) <-chan struct{} {
 			case <-c:
 				once.Do(func() { close(saida) })
 			case <-saida:
-				// Outro sinal chegou primeiro: esta goroutine termina
+				// Outro sinal chegou primeiro: esta gorrotina termina
 				// em vez de ficar presa esperando `c` para sempre.
 			}
 		}()
@@ -59,7 +59,7 @@ func combinarSinais() {
 	fmt.Println("contexto cancelado:", ctx.Err())
 
 	// qualquer fica para o que não é contexto. Aqui, um canal que outra
-	// goroutine fecha ao terminar; a goroutine é andaime, simula um colega
+	// gorrotina fecha ao terminar; a gorrotina é andaime, simula um colega
 	// que acaba antes do prazo.
 	ctx, cancelar := context.WithTimeout(context.Background(), time.Second)
 	defer cancelar()

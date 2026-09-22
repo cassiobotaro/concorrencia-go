@@ -29,7 +29,7 @@ func grupoDeTrabalhadores(ctx context.Context, entrada <-chan int, nTrabalhadore
 	var wg sync.WaitGroup
 
 	// Cria e inicia os trabalhadores. wg.Go dispara a função em uma nova
-	// goroutine e registra no WaitGroup que ela precisa terminar.
+	// gorrotina e registra no WaitGroup que ela precisa terminar.
 	for i := range nTrabalhadores {
 		wg.Go(func() {
 			trabalhador(ctx, i+1, entrada, saida)

@@ -8,7 +8,7 @@ import (
 
 // janelaDeslizante mantém apenas os `tamanho` itens mais recentes vindos de
 // `entrada`, descartando o mais antigo quando a janela enche. Uma única
-// goroutine é dona de todo o estado (a fila), então não há disputa entre
+// gorrotina é dona de todo o estado (a fila), então não há disputa entre
 // produtor e consumidor pelo buffer.
 func janelaDeslizante(entrada <-chan int, saida chan<- int, tamanho int) {
 	defer close(saida)
