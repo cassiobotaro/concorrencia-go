@@ -52,6 +52,7 @@ Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as 
 - [Go Concurrency Patterns: Timing out, moving on](https://go.dev/blog/concurrency-timeouts), Andrew Gerrand, 2010.
 - [Testing concurrent code with testing/synctest](https://go.dev/blog/synctest), Damien Neil, 2025.
 - [Testing Time (and other asynchronicities)](https://go.dev/blog/testing-time), Damien Neil, 2025.
+- [Goroutine Leak Profiles](https://go.dev/blog/goroutine-leak-profiles), Vlad Saioc, 2026.
 - [Go Proverbs](https://go-proverbs.github.io/), Rob Pike, Gopherfest 2015.
 - [Concurrency in Go](https://www.oreilly.com/library/view/concurrency-in-go/9781491941294/), Katherine Cox-Buday, O'Reilly, 2017.
 - [Apresentação sobre concorrência](https://github.com/andrebq/andrebq.github.io) do @andrebq, de onde vêm boa parte das explicações e dos exemplos.
