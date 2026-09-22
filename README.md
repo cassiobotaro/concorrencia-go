@@ -164,7 +164,7 @@ Um _pipeline_ recebe valores de um canal e escreve em outro, normalmente depois 
 
 No exemplo, a função `dobro` é um estágio: lê os valores do canal de entrada e escreve os valores dobrados no canal de saída.
 
-Repare nas assinaturas. A função `dobro` recebe um `<-chan int` e devolve outro `<-chan int`. Com os tipos direcionais, o compilador impede que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler, e fica claro quem lê e quem escreve em cada estágio. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#-parada-com-confirmação), usado nos dois sentidos de propósito.
+Repare nas assinaturas. A função `dobro` recebe um `<-chan int` e devolve outro `<-chan int`. Com os tipos direcionais, o compilador impede que um estágio leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler, e fica claro quem lê e quem escreve em cada estágio. Todos os exemplos usam tipos direcionais nas assinaturas.
 
 `sequenciaNumeros` envia os valores para o canal de entrada do _pipeline_. A função principal recebe os valores transformados pelo canal de saída e os imprime.
 
@@ -806,9 +806,7 @@ func main() {
 	}
 	fmt.Println("gerador cancelável encerrado")
 
-	// Parada com confirmação (veja quit_confirmacao.go)
-	quitComConfirmacao()
-	// A mesma parada com context e errgroup (veja context_errgroup.go)
+	// Parada com confirmação (veja context_errgroup.go)
 	paradaComErrgroup()
 	// Vários sinais de parada combinados em um só (veja qualquer.go)
 	combinarSinais()
@@ -819,11 +817,9 @@ func main() {
 
 **Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
 
-Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o canal `quit` que a _goroutine_ já observa para parar. Quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
+Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Nas palestras isso era feito à mão. Rob Pike, em [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), reaproveita o canal `quit`: quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Sameer Ajmani, em [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), usa [requisição e resposta](#-requisição-e-resposta): o método `Close` envia um canal de resposta por um `chan chan error` e espera nele, e a _goroutine_ faz a limpeza e responde com o erro, se houver. Nos dois, o pedido desce e a resposta sobe pelo mesmo mecanismo.
 
-A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta). O método `Close` envia um canal de resposta por um `chan chan error` e espera nele. A _goroutine_ faz a limpeza e responde com o erro, se houver. O pedido desce e a resposta sobe pelo mesmo mecanismo.
-
-O `context` faz só a metade de baixo. Ele leva o sinal de quem chama para quem é chamado e nunca traz nada de volta. Para a metade de cima, o costume hoje é juntar o `context` com um `errgroup`, o mesmo pacote visto na [variante do semáforo](#e-com-errgroup). A _goroutine_ roda dentro de `g.Go`, faz a limpeza ao ver `ctx.Done()` e devolve o erro. Quem quer parar chama `cancel()` e depois `g.Wait()`, que bloqueia até a _goroutine_ retornar e entrega esse erro. É o `Close` de Ajmani em duas chamadas, sem canal de resposta escrito à mão. A [segunda versão abaixo](./cancelamento/context_errgroup.go) faz isso, e a saída é a mesma da primeira: o gerador libera os recursos antes de o programa seguir.
+O `context` faz só a metade de baixo. Ele leva o sinal de quem chama para quem é chamado e nunca traz nada de volta. Para a metade de cima, o costume hoje é juntar o `context` com um `errgroup`, o mesmo pacote visto na [variante do semáforo](#e-com-errgroup). A _goroutine_ roda dentro de `g.Go`, faz a limpeza ao ver `ctx.Done()` e devolve o erro. Quem quer parar chama `cancel()` e depois `g.Wait()`, que bloqueia até a _goroutine_ retornar e entrega esse erro. É o `Close` de Ajmani em duas chamadas, sem canal de resposta escrito à mão. É o que o [exemplo](./cancelamento/context_errgroup.go) faz: o gerador libera os recursos, e só então o programa segue. O `time.Sleep` dentro de `limpeza` é andaime, está ali para a liberação levar tempo visível.
 
 Quando a confirmação precisa carregar mais do que um erro, o canal de resposta continua sendo a forma. `context.WithCancelCause`, que existe desde o Go 1.20, deixa quem cancela dizer o motivo, lido do outro lado com `context.Cause(ctx)`. Isso é informação descendo, de quem cancela para quem é cancelado, e não substitui a confirmação.
 
@@ -831,53 +827,9 @@ Quando a confirmação precisa carregar mais do que um erro, o canal de resposta
 package main
 
 import (
-	"fmt"
-	"time"
-)
-
-// tagarelaComConfirmacao envia mensagens até receber algo no canal quit.
-// Antes de sair faz a limpeza e confirma no MESMO canal que terminou,
-// por isso o canal é bidirecional.
-func tagarelaComConfirmacao(nome string, quit chan string) <-chan string {
-	saida := make(chan string)
-	go func() {
-		for i := 0; ; i++ {
-			select {
-			case saida <- fmt.Sprintf("%s %d", nome, i):
-			case <-quit:
-				limpeza()
-				quit <- "parei"
-				return
-			}
-		}
-	}()
-	return saida
-}
-
-// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
-func limpeza() {
-	fmt.Println("gerador: liberando recursos...")
-	time.Sleep(100 * time.Millisecond)
-}
-
-func quitComConfirmacao() {
-	quit := make(chan string)
-	c := tagarelaComConfirmacao("Duda", quit)
-	for range 3 {
-		fmt.Println(<-c)
-	}
-	quit <- "pare"
-	// Só seguimos em frente depois que o gerador confirmar que terminou
-	fmt.Println("gerador:", <-quit)
-}
-```
-
-```go
-package main
-
-import (
 	"context"
 	"fmt"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -894,6 +846,12 @@ func tagarelaComContext(ctx context.Context, nome string, saida chan<- string) e
 			return ctx.Err()
 		}
 	}
+}
+
+// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
+func limpeza() {
+	fmt.Println("gerador: liberando recursos...")
+	time.Sleep(100 * time.Millisecond)
 }
 
 func paradaComErrgroup() {

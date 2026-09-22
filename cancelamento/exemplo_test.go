@@ -13,11 +13,6 @@ func Example() {
 	// valor: 3
 	// gerador: cancelado, encerrando
 	// gerador cancelável encerrado
-	// Duda 0
-	// Duda 1
-	// Duda 2
-	// gerador: liberando recursos...
-	// gerador: parei
 	// Bia 0
 	// Bia 1
 	// Bia 2

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -19,6 +20,12 @@ func tagarelaComContext(ctx context.Context, nome string, saida chan<- string) e
 			return ctx.Err()
 		}
 	}
+}
+
+// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
+func limpeza() {
+	fmt.Println("gerador: liberando recursos...")
+	time.Sleep(100 * time.Millisecond)
 }
 
 func paradaComErrgroup() {
