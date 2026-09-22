@@ -12,10 +12,12 @@ Outras influências:
 
 - O [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
 - A palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) de Rob Pike (Google I/O 2012), de onde vêm os geradores, o fan-in, os timeouts com `select` e o canal de parada.
-- A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide) de Sameer Ajmani (Google I/O 2013), de onde vêm o laço `for` com `select` e estado local, a parada confirmada por canal de resposta e o canal `nil` no `select`. As duas palestras são anteriores ao pacote `context`, e a abertura da [Parte 3](#parte-3--encerrando-goroutines) diz o que mudou com ele.
+- A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide) de Sameer Ajmani (Google I/O 2013), de onde vêm o laço `for` com `select` e estado local, a parada confirmada por canal de resposta e o canal `nil` no `select`. As duas palestras são anteriores ao pacote `context`, e a abertura da [Parte 2](#parte-2--encerrando-goroutines) diz o que mudou com ele.
 - Os [Go Proverbs](https://go-proverbs.github.io/), também de Rob Pike (Gopherfest 2015): "_Don't communicate by sharing memory, share memory by communicating_", "_Concurrency is not parallelism_", "_Channels orchestrate; mutexes serialize_" e "_Clear is better than clever_".
 
-Cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--fundamentos) apresenta as peças da linguagem: canais, `select` e `WaitGroup`. A [Parte 2](#parte-2--padrões-básicos) traz os padrões básicos. A [Parte 3](#parte-3--encerrando-goroutines) ensina a encerrar _goroutines_. A [Parte 4](#parte-4--controlando-o-ritmo) trata de produtores e consumidores em ritmos diferentes. A [Parte 5](#parte-5--padrões-avançados) reúne as combinações. Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
+O texto parte do princípio de que você conhece Go, inclusive _goroutines_, canais, `select` e `sync.WaitGroup`. Se alguma dessas peças for nova, passe antes pelo [Tour of Go](https://go.dev/tour/concurrency/1), pelos capítulos de concorrência do [Go by Example](https://gobyexample.com/goroutines), que cobrem canais com e sem buffer, direção, `select`, timeouts, fechamento de canal e `WaitGroup`, e pela seção de concorrência do [Effective Go](https://go.dev/doc/effective_go#concurrency). Os padrões daqui usam essas peças sem explicá-las de novo.
+
+Cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--padrões-básicos) traz os padrões básicos. A [Parte 2](#parte-2--encerrando-goroutines) ensina a encerrar _goroutines_. A [Parte 3](#parte-3--controlando-o-ritmo) trata de produtores e consumidores em ritmos diferentes. A [Parte 4](#parte-4--padrões-avançados) reúne as combinações. Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
 
 Os `fmt.Print` dos exemplos estão ali só para você enxergar a execução e não fazem parte dos padrões. Em código real seriam _logs_, ou nem existiriam.
 
@@ -25,12 +27,7 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
 
 ## 📑 Sumário
 
-- [Parte 1 · Fundamentos](#parte-1--fundamentos)
-  - [🔗 Canais](#-canais)
-  - [🗺️ Olá Mundo](#️-olá-mundo)
-  - [🎛️ Select e timeouts](#️-select-e-timeouts)
-  - [⏳ Esperando goroutines (WaitGroup)](#-esperando-goroutines-waitgroup)
-- [Parte 2 · Padrões básicos](#parte-2--padrões-básicos)
+- [Parte 1 · Padrões básicos](#parte-1--padrões-básicos)
   - [🆕 Geradores](#-geradores)
   - [🚧 Trabalhador (worker)](#-trabalhador-worker)
   - [🏭 Pipeline](#-pipeline)
@@ -41,19 +38,19 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
     - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
   - [👷 Grupo de Trabalhadores (pool of workers)](#-grupo-de-trabalhadores-pool-of-workers)
   - [📨 Requisição e resposta](#-requisição-e-resposta)
-- [Parte 3 · Encerrando goroutines](#parte-3--encerrando-goroutines)
+- [Parte 2 · Encerrando goroutines](#parte-2--encerrando-goroutines)
   - [🚏 Canal de parada (quit channel)](#-canal-de-parada-quit-channel)
   - [🛑 Vazamento de goroutines e context](#-vazamento-de-goroutines-e-context)
   - [🤝 Parada com confirmação](#-parada-com-confirmação)
   - [🧩 Combinar sinais de parada (or-channel)](#-combinar-sinais-de-parada-or-channel)
-- [Parte 4 · Controlando o ritmo](#parte-4--controlando-o-ritmo)
+- [Parte 3 · Controlando o ritmo](#parte-3--controlando-o-ritmo)
   - [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
   - [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
     - [E com errgroup?](#e-com-errgroup)
   - [🎫 Sistema de ticket](#-sistema-de-ticket)
   - [📦 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
   - [🪟 Janela deslizante](#-janela-deslizante)
-- [Parte 5 · Padrões avançados](#parte-5--padrões-avançados)
+- [Parte 4 · Padrões avançados](#parte-4--padrões-avançados)
   - [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
     - [E com mutex?](#e-com-mutex)
   - [🏁 Primeiro a responder](#-primeiro-a-responder)
@@ -61,202 +58,9 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
 - [Curiosidade](#curiosidade)
   - [⛓️ Daisy-chain](#️-daisy-chain)
 
-## Parte 1 · Fundamentos
+## Parte 1 · Padrões básicos
 
-Antes dos padrões, as peças da linguagem que todos eles usam. Esta parte não apresenta nenhum padrão. Ela explica os canais, o `select` e a forma de esperar _goroutines_ terminarem. Se você já conhece essas peças, pode ir direto para a Parte 2.
-
-### 🔗 Canais
-
-Canais (_channels_) são uma primitiva da linguagem. Você os usa para enviar e receber valores entre _goroutines_. Os valores podem ser de qualquer tipo, inclusive do tipo canal.
-
-Um canal é um ponto de sincronização entre _goroutines_. Quem escreve fica bloqueado até alguém ler, e quem lê fica bloqueado até alguém escrever ou fechar o canal.
-
-Fechar um canal indica que nenhum outro valor será escrito nele. Daí em diante, ler devolve o valor zero do tipo, e escrever causa um erro em tempo de execução (_panic_).
-
-**Fechar como sinal.** Fechar um canal é a forma usual em Go de comunicar um evento que acontece uma única vez, como "terminei" ou "pode parar". Funciona para qualquer número de leitores, porque todos os que estiverem lendo são desbloqueados ao mesmo tempo. Para isso costuma-se usar um `chan struct{}`, que não carrega dado nenhum. O primeiro uso aparece no [trabalhador](#-trabalhador-worker).
-
-**Canais com buffer.** `make(chan int, 3)` cria um canal que guarda até três valores. Enviar só bloqueia quando o buffer está cheio, e receber só bloqueia quando ele está vazio. O buffer tira a sincronização entre quem envia e quem recebe, e por isso pede mais cuidado. Os exemplos daqui usam canais sem buffer sempre que podem. O buffer só aparece quando ele é a própria ideia do padrão, como na [contrapressão](#-contrapressão-backpressure), no [semáforo](#-semáforo-paralelismo-limitado) e no [primeiro a responder](#-primeiro-a-responder).
-
-**Direção.** Na assinatura de uma função, um canal pode ser declarado só para leitura (`<-chan int`) ou só para escrita (`chan<- int`). Com isso o compilador impede que a função leia do canal em que só deveria escrever, ou escreva naquele em que só deveria ler. Todos os exemplos usam tipos direcionais nas assinaturas. A única exceção é o canal `quit` da [parada com confirmação](#-parada-com-confirmação), usado nos dois sentidos de propósito.
-
-### 🗺️ Olá Mundo
-
-O [primeiro exemplo](./ola_mundo/ola_mundo.go) mostra como criar um canal, que serve de ponte entre a função principal e uma _goroutine_.
-
-O programa principal fica bloqueado em `<-canal` até que a _goroutine_ envie a mensagem "Olá, mundo!".
-
-Quando isto ocorre, o programa principal é desbloqueado, recebe a mensagem e a exibe. Como o canal não tem buffer, o envio e o recebimento acontecem juntos.
-
-Quando o programa principal termina, a _goroutine_ é também terminada.
-
-```go
-package main
-
-import "fmt"
-
-func main() {
-	canal := make(chan string)
-	go func() {
-		canal <- "Olá, mundo!"
-	}()
-
-	fmt.Println(<-canal)
-}
-```
-
-### 🎛️ Select e timeouts
-
-O `select` é uma estrutura de controle feita para concorrência. Ele parece um `switch`, mas cada `case` é uma comunicação: um envio ou um recebimento em um canal. O `select` bloqueia até que alguma das comunicações possa prosseguir. Se várias puderem ao mesmo tempo, ele escolhe uma de forma pseudoaleatória. Se houver um `default`, ele não bloqueia. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Rob Pike diz que o `select` é a razão de canais e _goroutines_ fazerem parte da linguagem, em vez de serem uma biblioteca.
-
-Quase todos os padrões das próximas partes dependem dele. O uso mais comum é dar um prazo a uma comunicação. Os dois exemplos usam o mesmo gerador, `tagarela`, que fala cada vez mais devagar:
-
-- **Timeout por mensagem.** `time.After` devolve um canal que recebe um valor depois do tempo indicado. Colocado em um `case` dentro do laço, ele é recriado a cada volta. O prazo vale para cada mensagem e é renovado sempre que uma chega.
-- **Timeout para a conversa inteira.** É o mesmo `time.After`, mas criado uma única vez, fora do laço. O prazo vale para a conversa toda, não importa quantas mensagens cheguem.
-
-Até o Go 1.22, cada `time.After` deixava um timer vivo até disparar, mesmo depois de o `select` ter escolhido outro `case`. Com um prazo de 350ms e mensagens a cada 100ms, sobravam timers esperando à toa, e a recomendação era evitar `time.After` dentro de laço. Desde o Go 1.23, um timer que o programa não referencia mais é recolhido pelo coletor de lixo na hora, desde que o `go.mod` declare `go 1.23` ou mais novo, como o deste repositório. O timeout por mensagem, do jeito que está, é a forma correta. Em código real o prazo costuma chegar de fora, em um `context.Context` criado com `context.WithTimeout`, e o `case` passa a ser `<-ctx.Done()`. Esse é o timeout da conversa inteira, com a diferença de que o mesmo prazo atravessa as funções chamadas. A [Parte 3](#parte-3--encerrando-goroutines) mostra isso.
-
-Dois outros recursos do `select` aparecem mais adiante. O `default`, que torna o `select` não bloqueante, é usado na [contrapressão](#-contrapressão-backpressure) e no [heartbeat](#-heartbeat). O outro é o canal `nil`. Um `select` nunca escolhe um `case` cujo canal é `nil`, então atribuir `nil` à variável do canal desliga aquele `case` enquanto o laço continua rodando. Esse truque aparece no [fan-in com select](#fan-in-com-uma-goroutine-e-select) e na [janela deslizante](#-janela-deslizante). Ele é uma das três técnicas da palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), que tem um slide só para ele.
-
-O `tagarela` recebe um canal `quit`, que a função fecha ao sair para que o gerador também termine. Esse é o [canal de parada](#-canal-de-parada-quit-channel), assunto da Parte 3.
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-)
-
-// tagarela é um gerador que fala cada vez mais devagar: a pausa entre as
-// mensagens cresce 100ms a cada envio. Ele só para quando o canal quit é
-// fechado (veja o exemplo canal_de_parada).
-func tagarela(nome string, quit <-chan struct{}) <-chan string {
-	saida := make(chan string)
-	go func() {
-		defer close(saida)
-		for i := 0; ; i++ {
-			// O envio disputa com o sinal de parada: o que puder
-			// prosseguir primeiro, vence.
-			select {
-			case saida <- fmt.Sprintf("%s %d", nome, i):
-				time.Sleep(time.Duration(i) * 100 * time.Millisecond)
-			case <-quit:
-				return
-			}
-		}
-	}()
-	return saida
-}
-
-// timeoutPorMensagem desiste quando UMA mensagem demora mais do que 350ms.
-// O time.After é criado a cada volta do laço, então o prazo é renovado
-// sempre que uma mensagem chega.
-func timeoutPorMensagem() {
-	quit := make(chan struct{})
-	defer close(quit)
-	c := tagarela("Ana", quit)
-
-	for {
-		select {
-		case s := <-c:
-			fmt.Println(s)
-		case <-time.After(350 * time.Millisecond):
-			fmt.Println("Ana demorou demais para falar.")
-			return
-		}
-	}
-}
-
-// timeoutDaConversa limita a duração da conversa INTEIRA a 500ms.
-// O time.After é criado uma única vez, fora do laço: o prazo não é renovado.
-func timeoutDaConversa() {
-	quit := make(chan struct{})
-	defer close(quit)
-	c := tagarela("Beto", quit)
-
-	timeout := time.After(500 * time.Millisecond)
-	for {
-		select {
-		case s := <-c:
-			fmt.Println(s)
-		case <-timeout:
-			fmt.Println("A conversa com o Beto acabou.")
-			return
-		}
-	}
-}
-
-func main() {
-	timeoutPorMensagem()
-	timeoutDaConversa()
-}
-```
-
-### ⏳ Esperando goroutines (WaitGroup)
-
-No [Olá Mundo](#️-olá-mundo), o programa principal esperou a _goroutine_ lendo de um canal. Quando o que se quer é só esperar várias _goroutines_ terminarem, sem receber nenhum dado delas, a ferramenta certa é o `sync.WaitGroup`.
-
-São duas chamadas. O `wg.Go` dispara a função em uma nova _goroutine_ e registra no `WaitGroup` que ela precisa terminar. O `wg.Wait()` bloqueia até que todas as _goroutines_ disparadas assim terminem.
-
-No exemplo, três tarefas com durações diferentes são disparadas de uma vez. A função principal só imprime a última linha depois que as três terminaram. Experimente comentar o `wg.Wait()` e veja o programa acabar antes de qualquer tarefa imprimir.
-
-O `wg.Go` existe desde o Go 1.25. Em código mais antigo você vai encontrar a forma equivalente, com `wg.Add(1)` antes de cada `go` e `defer wg.Done()` dentro da _goroutine_. O `wg.Go` faz as duas coisas de uma vez e evita os erros clássicos dessa forma, como esquecer o `Done` ou chamar o `Add` dentro da _goroutine_.
-
-Por que um `WaitGroup` e não um canal? Canais servem para orquestrar o fluxo de dados entre _goroutines_. Contar quantas já terminaram é um problema menor, e para esses Rob Pike recomenda o pacote `sync`. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) ele avisa "_Don't overdo it_", porque às vezes só é preciso um contador. É o provérbio "_Channels orchestrate; mutexes serialize_", dos [Go Proverbs](https://go-proverbs.github.io/). Por isso, nos padrões a seguir, os canais transportam os dados e o `WaitGroup` apenas conta quem terminou.
-
-```go
-package main
-
-import (
-	"fmt"
-	"sync"
-	"time"
-)
-
-// tarefa simula um trabalho que leva algum tempo.
-func tarefa(id int) {
-	time.Sleep(time.Duration(id) * 50 * time.Millisecond)
-	fmt.Printf("tarefa %d terminou\n", id)
-}
-
-func main() {
-	var wg sync.WaitGroup
-
-	// wg.Go dispara a função em uma nova goroutine e registra no
-	// WaitGroup que ela precisa terminar.
-	for i := range 3 {
-		wg.Go(func() {
-			tarefa(i + 1)
-		})
-	}
-
-	// Bloqueia até que todas as goroutines disparadas com wg.Go terminem.
-	// Sem esta linha o programa acabaria antes de as tarefas imprimirem.
-	wg.Wait()
-	fmt.Println("todas as tarefas terminaram")
-}
-```
-
-> **É possível fazer só com canais.** Um canal com buffer de tamanho `n` e um laço que lê `n` vezes fazem o mesmo papel. Cada tarefa envia um sinal ao terminar, e a função principal espera receber todos. Funciona, mas é um `WaitGroup` refeito à mão.
->
-> ```go
-> terminar := make(chan struct{}, 3)
->
-> for i := range 3 {
-> 	go func() {
-> 		tarefa(i + 1)
-> 		terminar <- struct{}{}
-> 	}()
-> }
->
-> for range 3 {
-> 	<-terminar
-> }
-> ```
-
-## Parte 2 · Padrões básicos
-
-Os blocos de montar. Cada padrão desta parte faz uma coisa só e usa apenas o que foi visto nos fundamentos. Os padrões das partes seguintes são combinações e variações destes.
+Os blocos de montar. Cada padrão desta parte faz uma coisa só e usa apenas canais, `select` e `WaitGroup`. Os padrões das partes seguintes são combinações e variações destes.
 
 ### 🆕 Geradores
 
@@ -266,7 +70,7 @@ Um gerador é uma função que dispara uma _goroutine_ para escrever uma sequên
 
 No [exemplo](./geradores/geradores.go), `sequenciaNumeros` gera mil inteiros. A função principal lê o canal e imprime os valores. Com o `range`, a iteração continua até o canal ser fechado.
 
-Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disputa com `ctx.Done()`. Sem isso, um consumidor que parasse de ler no meio deixaria a _goroutine_ presa para sempre no próximo envio, com o canal e tudo o que ela segura. Com o contexto, quem consome cancela, a _goroutine_ sai e fecha o canal ao sair. No `main` isso não chega a acontecer, porque o laço lê os mil valores. O `exemplo_test.go` da pasta faz o outro caminho: lê um valor, cancela e drena o canal até ele fechar, o que prova que a _goroutine_ terminou. É a forma de escrever um gerador em código de hoje, e o mecanismo por trás dela é o assunto da [Parte 3](#parte-3--encerrando-goroutines).
+Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disputa com `ctx.Done()`. Sem isso, um consumidor que parasse de ler no meio deixaria a _goroutine_ presa para sempre no próximo envio, com o canal e tudo o que ela segura. Com o contexto, quem consome cancela, a _goroutine_ sai e fecha o canal ao sair. No `main` isso não chega a acontecer, porque o laço lê os mil valores. O `exemplo_test.go` da pasta faz o outro caminho: lê um valor, cancela e drena o canal até ele fechar, o que prova que a _goroutine_ terminou. É a forma de escrever um gerador em código de hoje, e o mecanismo por trás dela é o assunto da [Parte 2](#parte-2--encerrando-goroutines).
 
 O custo é que a responsabilidade passa para quem consome. Ele precisa criar o contexto e cancelar ao sair, mesmo quando leu tudo, e o `defer cancelar()` do exemplo está ali por isso. Esquecer o `cancel` é um erro que o `go vet` aponta (`lostcancel`): o contexto filho fica registrado no pai até o pai ser cancelado.
 
@@ -369,7 +173,7 @@ Os valores gerados por `sequenciaNumeros` são enviados para o canal de entrada 
 
 Os estágios podem ser encadeados. No exemplo, `dobro` é aplicado duas vezes, e cada valor sai multiplicado por quatro.
 
-> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 3](#parte-3--encerrando-goroutines).
+> **Atenção:** o gerador e as etapas deste _pipeline_ não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 2](#parte-2--encerrando-goroutines).
 
 ```go
 package main
@@ -563,7 +367,7 @@ func main() {
 
 Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee/tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma _goroutine_ para cada envio.
 
-O `time.After` dentro do laço é recriado a cada envio, e o prazo vale para cada valor em cada saída. Até o Go 1.22, cada chamada deixava um timer vivo até disparar, mesmo depois de o `select` ter escolhido outro `case`, e a recomendação era evitar `time.After` em laço. Desde o Go 1.23, um timer que o programa não referencia mais é recolhido pelo coletor de lixo na hora, desde que o `go.mod` declare `go 1.23` ou mais novo, como o deste repositório. Em código real o prazo costuma chegar de fora, em um `context.Context` criado com `context.WithTimeout`, e o `case` passa a ser `<-ctx.Done()`. A diferença é que o mesmo prazo vale para a conversa inteira e atravessa as funções chamadas. A [Parte 3](#parte-3--encerrando-goroutines) mostra isso.
+O `time.After` dentro do laço é recriado a cada envio, e o prazo vale para cada valor em cada saída. Até o Go 1.22, cada chamada deixava um timer vivo até disparar, mesmo depois de o `select` ter escolhido outro `case`, e a recomendação era evitar `time.After` em laço. Desde o Go 1.23, um timer que o programa não referencia mais é recolhido pelo coletor de lixo na hora, desde que o `go.mod` declare `go 1.23` ou mais novo, como o deste repositório. Em código real o prazo costuma chegar de fora, em um `context.Context` criado com `context.WithTimeout`, e o `case` passa a ser `<-ctx.Done()`. A diferença é que o mesmo prazo vale para a conversa inteira e atravessa as funções chamadas. A [Parte 2](#parte-2--encerrando-goroutines) mostra isso.
 
 Descartar mensagens é uma decisão de projeto, e não parte do padrão. Com o descarte, o consumidor lento deixa de ver todos os valores, que era justamente a garantia do tee. Por isso o exemplo avisa na saída cada vez que descarta, em vez de descartar em silêncio. O timeout limita o atraso, mas não acaba com ele. Cada valor ainda pode esperar até `timeout` em cada saída lenta. Outras formas de lidar com um consumidor lento aparecem na [janela deslizante](#-janela-deslizante) e na [contrapressão](#-contrapressão-backpressure).
 
@@ -615,7 +419,7 @@ Escrever em um canal fechado causa um _panic_, então a saída só pode ser fech
 
 Repare na _goroutine_ que espera em `wg.Wait()` e fecha a saída quando a última entrada acaba.
 
-> **Atenção:** estes geradores não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 3](#parte-3--encerrando-goroutines).
+> **Atenção:** estes geradores não são canceláveis, e vazam se o consumidor parar de ler antes do fim. Veja a [Parte 2](#parte-2--encerrando-goroutines).
 
 ```go
 package main
@@ -861,9 +665,9 @@ func main() {
 }
 ```
 
-## Parte 3 · Encerrando goroutines
+## Parte 2 · Encerrando goroutines
 
-Os geradores copiados nos exemplos da Parte 2 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
+Os geradores copiados nos exemplos da Parte 1 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
 
 As duas palestras que mais aparecem aqui, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013. Esta parte mostra primeiro o canal `quit` das palestras e depois a forma com `context`, que é a que você vai encontrar em código de hoje.
 
@@ -1200,7 +1004,7 @@ func combinarSinais() {
 }
 ```
 
-## Parte 4 · Controlando o ritmo
+## Parte 3 · Controlando o ritmo
 
 O que fazer quando quem produz e quem consome andam em velocidades diferentes. Cada padrão desta parte dá uma resposta: fazer o produtor esperar, limitar quantos executam ao mesmo tempo, limitar a taxa, agrupar o trabalho ou descartar o que ficou velho.
 
@@ -1730,7 +1534,7 @@ func main() {
 }
 ```
 
-## Parte 5 · Padrões avançados
+## Parte 4 · Padrões avançados
 
 Padrões que combinam várias peças das partes anteriores, como canais de resposta, `select`, buffer, timeout e `context`. Vale ler as outras partes antes.
 
@@ -1876,7 +1680,7 @@ func comMutex() {
 
 Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com um prazo em `context.WithTimeout`, o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
 
-A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o [cancelamento](#-vazamento-de-goroutines-e-context) da Parte 3 aplicado ao padrão.
+A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o [cancelamento](#-vazamento-de-goroutines-e-context) da Parte 2 aplicado ao padrão.
 
 Repare no canal com buffer de tamanho `len(replicas)`. Mesmo com o cancelamento, uma perdedora pode terminar entre a chegada da vencedora e o `cancel()`. Com um canal sem buffer ela ficaria bloqueada no envio para sempre, pois ninguém mais vai ler. Com uma vaga por réplica, ela deposita a resposta e termina.
 
