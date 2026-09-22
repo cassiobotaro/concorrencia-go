@@ -51,7 +51,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Testes (Example de cada pasta) com -race
+      - name: Testes de cada pasta com -race
         run: go test -race ./...
 
       - name: Executa cada exemplo com -race

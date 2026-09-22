@@ -12,7 +12,7 @@ Para ir mais fundo em `context`, sugiro também [este repositório](https://gith
 
 Os `fmt.Print` dos exemplos estão ali só para você enxergar a execução e não fazem parte dos padrões. Em código real seriam _logs_, ou nem existiriam.
 
-Cada pasta é um programa independente, que você executa com `go run ./pipeline/`, e tem um `README.md` com a explicação do padrão. Cada uma tem também um `exemplo_test.go` com uma função `Example` que confere a saída. Ela usa `// Output:` quando a ordem das linhas é fixa e `// Unordered output:` quando só o conjunto é previsível. Para rodar tudo com o detector de corrida, use `go test -race ./...`.
+Cada pasta é um programa independente, que você executa com `go run ./pipeline/`, e tem um `README.md` com a explicação do padrão. Cada uma tem também um `exemplo_test.go` que confere a saída. Quando o exemplo não depende do relógio, o teste é uma função `Example`, que usa `// Output:` quando a ordem das linhas é fixa e `// Unordered output:` quando só o conjunto é previsível. Quando o exemplo dorme, espera um _ticker_ ou tem prazo, o teste roda dentro de `synctest.Test`, do pacote `testing/synctest`. Lá dentro, na chamada bolha, o relógio é falso e só anda quando todas as gorrotinas estão bloqueadas. Um `time.Sleep` de um segundo termina na hora, e o tempo medido é sempre o mesmo. `synctest.Test` pede um `*testing.T`, que uma `Example` não recebe, então esses testes são funções `Test` e capturam a saída com o pacote [`internal/saida`](./internal/saida/saida.go). A bolha ainda confere uma coisa a mais: se sobrar gorrotina viva quando o teste acaba, ele falha. Para rodar tudo com o detector de corrida, use `go test -race ./...`.
 
 Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguagens, por isso o README de cada padrão traz uma linha "Também conhecido como". Dois pedem cuidado: "produtor" e "consumidor" são papéis, não padrões, e quase todo exemplo tem os dois. Aparecem como nomes alternativos de [Geradores](./geradores/README.md) e [Trabalhador](./trabalhador/README.md) porque nesses dois cada papel aparece sozinho.
 
@@ -48,6 +48,8 @@ Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as 
 - [Go Concurrency Patterns: Context](https://go.dev/blog/context), Sameer Ajmani, 2014.
 - [Go Concurrency Patterns: Pipelines and cancellation](https://go.dev/blog/pipelines), Sameer Ajmani, 2014.
 - [Concurrency is not parallelism](https://go.dev/blog/waza-talk), Rob Pike, 2012.
+- [Testing concurrent code with testing/synctest](https://go.dev/blog/synctest), Damien Neil, 2025.
+- [Testing Time (and other asynchronicities)](https://go.dev/blog/testing-time), Damien Neil, 2025.
 - [Go Proverbs](https://go-proverbs.github.io/), Rob Pike, Gopherfest 2015.
 - [Concurrency in Go](https://www.oreilly.com/library/view/concurrency-in-go/9781491941294/), Katherine Cox-Buday, O'Reilly, 2017.
 - [Apresentação sobre concorrência](https://github.com/andrebq/andrebq.github.io) do @andrebq, de onde vêm boa parte das explicações e dos exemplos.
