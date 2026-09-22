@@ -258,36 +258,50 @@ Os blocos de montar. Cada padrão desta parte faz uma coisa só e usa apenas o q
 
 **Também conhecido como:** produtor, _source_. É o mesmo papel do `produtor` da seção de [contrapressão](#-contrapressão-backpressure).
 
-Um gerador é uma função que dispara uma _goroutine_ para escrever uma sequência de valores em um canal, e devolve esse canal a quem a chamou.
+Um gerador é uma função que dispara uma _goroutine_ para escrever uma sequência de valores em um canal, e devolve esse canal a quem a chamou. O produtor roda em paralelo com o consumidor. Isso importa quando produzir custa caro, como ler de disco ou de rede, e quando os valores vão atravessar um [_pipeline_](#-pipeline) de etapas concorrentes.
 
-No exemplo, uma sequência de números inteiros é gerada e enviada para um canal.
+No [exemplo](./geradores/geradores.go), `sequenciaNumeros` gera mil inteiros. A função principal lê o canal e imprime os valores. Com o `range`, a iteração continua até o canal ser fechado.
 
-A função `sequenciaNumeros` reaparece em vários exemplos. Ela é copiada de propósito, para que cada arquivo possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
+Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disputa com `ctx.Done()`. Sem isso, um consumidor que parasse de ler no meio deixaria a _goroutine_ presa para sempre no próximo envio, com o canal e tudo o que ela segura. Com o contexto, quem consome cancela, a _goroutine_ sai e fecha o canal ao sair. No `main` isso não chega a acontecer, porque o laço lê os mil valores. O `exemplo_test.go` da pasta faz o outro caminho: lê um valor, cancela e drena o canal até ele fechar, o que prova que a _goroutine_ terminou. É a forma de escrever um gerador em código de hoje, e o mecanismo por trás dela é o assunto da [Parte 3](#parte-3--encerrando-goroutines).
 
-A função principal lê o canal e imprime os valores. Com o `range`, a iteração continua até o canal ser fechado.
+O custo é que a responsabilidade passa para quem consome. Ele precisa criar o contexto e cancelar ao sair, mesmo quando leu tudo, e o `defer cancelar()` do exemplo está ali por isso. Esquecer o `cancel` é um erro que o `go vet` aponta (`lostcancel`): o contexto filho fica registrado no pai até o pai ser cancelado.
 
-> **Atenção:** este gerador não é cancelável, e a _goroutine_ vaza se o consumidor parar de ler antes do fim. Veja a [Parte 3](#parte-3--encerrando-goroutines).
+A função `sequenciaNumeros` reaparece em vários exemplos, sem o contexto, para que cada arquivo fique no assunto da própria seção. Ela é copiada de propósito, para que cada um possa ser lido e executado sozinho. Como diz um dos [Go Proverbs](https://go-proverbs.github.io/), "_a little copying is better than a little dependency_".
+
+> **Atenção:** as cópias sem contexto dos outros exemplos vazam a _goroutine_ se o consumidor parar de ler antes do fim. Cada seção avisa quando isso acontece.
 
 ```go
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+// sequenciaNumeros gera os inteiros de inicial a final em uma goroutine e
+// os envia por um canal. Cada envio disputa com ctx.Done(): se o consumidor
+// cancelar o contexto, a goroutine sai em vez de ficar presa no envio.
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		// fecha o canal ao sair, tanto no fim quanto no cancelamento
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
-	valores := sequenciaNumeros(1, 1000)
-	for valor := range valores {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	for valor := range sequenciaNumeros(ctx, 1, 1000) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
@@ -841,7 +855,7 @@ func main() {
 
 ## Parte 3 · Encerrando goroutines
 
-Os geradores da Parte 2 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
+Os geradores copiados nos exemplos da Parte 2 têm um defeito em comum: só terminam se alguém ler todos os valores. Esta parte trata de como mandar uma _goroutine_ parar, como saber que ela parou e o que acontece quando ninguém faz isso.
 
 ### 🚏 Canal de parada (quit channel)
 

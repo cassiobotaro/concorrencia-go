@@ -1,22 +1,34 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
-func sequenciaNumeros(inicial, final int) <-chan int {
+// sequenciaNumeros gera os inteiros de inicial a final em uma goroutine e
+// os envia por um canal. Cada envio disputa com ctx.Done(): se o consumidor
+// cancelar o contexto, a goroutine sai em vez de ficar presa no envio.
+func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
+		// fecha o canal ao sair, tanto no fim quanto no cancelamento
+		defer close(saida)
 		for i := inicial; i <= final; i++ {
-			saida <- i
+			select {
+			case saida <- i:
+			case <-ctx.Done():
+				return
+			}
 		}
-		// após gerar todos os valores, fecha o canal
-		close(saida)
 	}()
 	return saida
 }
 
 func main() {
-	valores := sequenciaNumeros(1, 1000)
-	for valor := range valores {
+	ctx, cancelar := context.WithCancel(context.Background())
+	defer cancelar()
+
+	for valor := range sequenciaNumeros(ctx, 1, 1000) {
 		fmt.Printf("valor: %v\n", valor)
 	}
 }
