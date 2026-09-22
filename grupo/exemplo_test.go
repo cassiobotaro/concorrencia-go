@@ -9,7 +9,8 @@ import (
 // execução. O exemplo usa um único trabalhador para que o conjunto de linhas
 // seja sempre o mesmo; a ordem entre elas continua variável.
 func Example() {
-	for resultado := range grupoDeTrabalhadores(sequenciaNumeros(context.Background(), 1, 3), 1) {
+	ctx := context.Background()
+	for resultado := range grupoDeTrabalhadores(ctx, sequenciaNumeros(ctx, 1, 3), 1) {
 		fmt.Println(resultado)
 	}
 

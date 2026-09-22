@@ -14,4 +14,6 @@ Como no [fan-out](../fan_out/README.md), a ordem da saída muda a cada execuçã
 
 Os trabalhadores são iniciados com `wg.Go`, e outra _goroutine_ espera em `wg.Wait()` para fechar o canal de saída, como no [fan-in](../fan_in/README.md). Repare que o `trabalhador` nem sabe que o `WaitGroup` existe. Ele só processa valores, e quem o dispara é que cuida de esperar.
 
+O mesmo `context.Context` vai para o gerador e para os trabalhadores. Cada trabalhador envia o resultado dentro de um `select` com `ctx.Done()`, como no [pipeline](../pipeline/README.md). Sem isso, um consumidor que parasse de ler a saída no meio deixaria os dois trabalhadores presos no envio, cada um com um resultado na mão que ninguém vai ler, e a _goroutine_ do `wg.Wait()` nunca fecharia a saída. Com o cancelamento, os trabalhadores saem, o `WaitGroup` chega a zero e a saída é fechada do mesmo jeito.
+
 O exemplo inteiro está em [`grupo.go`](./grupo.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).
