@@ -992,6 +992,8 @@ func main() {
 
 	// Parada com confirmação (veja quit_confirmacao.go)
 	quitComConfirmacao()
+	// A mesma parada com context e errgroup (veja context_errgroup.go)
+	paradaComErrgroup()
 	// Vários sinais de parada combinados em um só (veja qualquer.go)
 	combinarSinais()
 }
@@ -1003,9 +1005,11 @@ func main() {
 
 Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike faz isso reaproveitando o próprio canal `quit`. Quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Por isso, [neste exemplo](./cancelamento/quit_confirmacao.go), o `quit` é um canal bidirecional, um dos raros casos em que isso é intencional.
 
-A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta). O método `Close` envia um canal de resposta por um `chan chan error` e espera nele. A _goroutine_ faz a limpeza e responde com o erro, se houver. Prefira essa forma quando a confirmação precisa carregar alguma informação.
+A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani, chega ao mesmo resultado com [requisição e resposta](#-requisição-e-resposta). O método `Close` envia um canal de resposta por um `chan chan error` e espera nele. A _goroutine_ faz a limpeza e responde com o erro, se houver. O pedido desce e a resposta sobe pelo mesmo mecanismo.
 
-Com `context`, o equivalente é chamar `cancel()` e depois esperar um canal `pronto`, que a _goroutine_ fecha ao terminar a limpeza. Isso é necessário porque o `ctx` só leva o sinal em um sentido. Foi o que o exemplo de [context](#-vazamento-de-goroutines-e-context) fez ao ler o canal do gerador até ele ser fechado.
+O `context` faz só a metade de baixo. Ele leva o sinal de quem chama para quem é chamado e nunca traz nada de volta. Para a metade de cima, o costume hoje é juntar o `context` com um `errgroup`, o mesmo pacote visto na [variante do semáforo](#e-com-errgroup). A _goroutine_ roda dentro de `g.Go`, faz a limpeza ao ver `ctx.Done()` e devolve o erro. Quem quer parar chama `cancel()` e depois `g.Wait()`, que bloqueia até a _goroutine_ retornar e entrega esse erro. É o `Close` de Ajmani em duas chamadas, sem canal de resposta escrito à mão. A [segunda versão abaixo](./cancelamento/context_errgroup.go) faz isso, e a saída é a mesma da primeira: o gerador libera os recursos antes de o programa seguir.
+
+Quando a confirmação precisa carregar mais do que um erro, o canal de resposta continua sendo a forma. E note que `context.WithCancelCause`, que existe desde o Go 1.20, deixa quem cancela dizer o motivo, lido do outro lado com `context.Cause(ctx)`. Isso é informação descendo, de quem cancela para quem é cancelado, e não substitui a confirmação.
 
 ```go
 package main
@@ -1049,6 +1053,48 @@ func quitComConfirmacao() {
 	quit <- "pare"
 	// Só seguimos em frente depois que o gerador confirmar que terminou
 	fmt.Println("gerador:", <-quit)
+}
+```
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"golang.org/x/sync/errgroup"
+)
+
+// tagarelaComContext envia mensagens até o contexto ser cancelado. Antes
+// de sair faz a limpeza e devolve o motivo do cancelamento. A confirmação
+// é o próprio retorno: quem chamou espera por ele com g.Wait.
+func tagarelaComContext(ctx context.Context, nome string, saida chan<- string) error {
+	for i := 0; ; i++ {
+		select {
+		case saida <- fmt.Sprintf("%s %d", nome, i):
+		case <-ctx.Done():
+			limpeza()
+			return ctx.Err()
+		}
+	}
+}
+
+func paradaComErrgroup() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	saida := make(chan string)
+
+	var g errgroup.Group
+	g.Go(func() error { return tagarelaComContext(ctx, "Bia", saida) })
+
+	for range 3 {
+		fmt.Println(<-saida)
+	}
+	// cancelar manda parar. Wait bloqueia até a goroutine retornar e traz
+	// o erro dela: o pedido desce pelo contexto e a resposta sobe pelo
+	// errgroup.
+	cancelar()
+	fmt.Println("gerador:", g.Wait())
 }
 ```
 

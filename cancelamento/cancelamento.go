@@ -66,6 +66,8 @@ func main() {
 
 	// Parada com confirmação (veja quit_confirmacao.go)
 	quitComConfirmacao()
+	// A mesma parada com context e errgroup (veja context_errgroup.go)
+	paradaComErrgroup()
 	// Vários sinais de parada combinados em um só (veja qualquer.go)
 	combinarSinais()
 }
