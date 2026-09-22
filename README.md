@@ -48,6 +48,7 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
 - [Parte 4 · Controlando o ritmo](#parte-4--controlando-o-ritmo)
   - [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
   - [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
+    - [E com errgroup?](#e-com-errgroup)
   - [🎫 Sistema de ticket](#-sistema-de-ticket)
   - [📦 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
   - [🪟 Janela deslizante](#-janela-deslizante)
@@ -730,7 +731,7 @@ No exemplo, dois trabalhadores esperam valores no canal de entrada. Cada um dobr
 
 O grupo de trabalhadores é uma aplicação de [fan-out](#-fan-out). Várias _goroutines_ leem do mesmo canal e cada valor vai para uma só. Além de distribuir o trabalho, o grupo junta os resultados em um canal de saída.
 
-O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ por tarefa e limitar apenas quantas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado).
+O grupo fixa quantas _goroutines_ existem. Se a ideia for ter uma _goroutine_ por tarefa e limitar apenas quantas executam ao mesmo tempo, veja o [semáforo](#-semáforo-paralelismo-limitado). Se as tarefas devolvem erro, nos dois casos, veja a variante [com errgroup](#e-com-errgroup).
 
 Como no [fan-out](#-fan-out), a ordem da saída muda a cada execução.
 
@@ -1248,6 +1249,69 @@ func executarTarefas(tarefas, limite int) {
 func main() {
 	// Dez tarefas, no máximo três ao mesmo tempo
 	executarTarefas(10, 3)
+
+	// O mesmo com errgroup (veja com_errgroup.go): a tarefa 2 falha e as
+	// que ainda não começaram são canceladas
+	if err := executarTarefasErrgroup(10, 3, 2); err != nil {
+		fmt.Println("errgroup:", err)
+	}
+}
+```
+
+#### E com errgroup?
+
+O canal de vagas e o `WaitGroup` fazem duas coisas que o padrão sempre precisa: limitar e esperar. O pacote [`golang.org/x/sync/errgroup`](https://pkg.go.dev/golang.org/x/sync/errgroup) junta as duas em um tipo só e acrescenta a terceira, que os exemplos até aqui ignoraram: o erro. `g.SetLimit(3)` é o canal de três vagas. `g.Go` dispara a tarefa, e bloqueia quando as vagas acabam. `g.Wait` espera todas, como o `WaitGroup`, e devolve o primeiro erro que alguma tarefa retornou. Com `errgroup.WithContext`, esse primeiro erro cancela um contexto, e as tarefas que ainda não começaram podem desistir olhando `ctx.Err()`.
+
+A [versão abaixo](./semaforo/com_errgroup.go) faz isso. Com três vagas e a tarefa 2 falhando, as tarefas 1 a 3 começam, e as outras sete são canceladas antes de começar, porque quando elas conseguem uma vaga o contexto já foi cancelado. A tarefa que falha é andaime, existe só para mostrar o cancelamento.
+
+O custo é uma dependência fora da biblioteca padrão. É a única deste repositório. Vale a pena quando as tarefas devolvem erro e uma falha deve interromper as demais, que é o caso comum em código de produção. Quando as tarefas não falham, ou quando cada erro deve ser tratado por conta própria, o canal com buffer e o `WaitGroup` bastam.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+)
+
+// executarTarefasErrgroup faz o mesmo que executarTarefas, com um
+// errgroup.Group no lugar do canal e do WaitGroup: SetLimit é o número de
+// vagas, Go bloqueia quando elas acabam e Wait espera todas e devolve o
+// primeiro erro. A tarefa de número `falha` devolve erro para mostrar o
+// que acontece com as outras; ela é andaime, não faz parte do padrão.
+func executarTarefasErrgroup(tarefas, limite, falha int) error {
+	// O contexto é cancelado no primeiro erro
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(limite)
+
+	// Contador usado apenas para observar quantas tarefas estão ativas;
+	// ele não faz parte do padrão.
+	var ativas atomic.Int32
+
+	for i := range tarefas {
+		g.Go(func() error {
+			// As tarefas que ainda não começaram desistem
+			if ctx.Err() != nil {
+				fmt.Printf("errgroup: tarefa %2d cancelada\n", i+1)
+				return ctx.Err()
+			}
+
+			fmt.Printf("errgroup: tarefa %2d começou, ativas: %d\n", i+1, ativas.Add(1))
+			time.Sleep(100 * time.Millisecond)
+			ativas.Add(-1)
+
+			if i+1 == falha {
+				return fmt.Errorf("tarefa %d falhou", i+1)
+			}
+			return nil
+		})
+	}
+
+	return g.Wait()
 }
 ```
 

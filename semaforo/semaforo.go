@@ -37,4 +37,10 @@ func executarTarefas(tarefas, limite int) {
 func main() {
 	// Dez tarefas, no máximo três ao mesmo tempo
 	executarTarefas(10, 3)
+
+	// O mesmo com errgroup (veja com_errgroup.go): a tarefa 2 falha e as
+	// que ainda não começaram são canceladas
+	if err := executarTarefasErrgroup(10, 3, 2); err != nil {
+		fmt.Println("errgroup:", err)
+	}
 }
