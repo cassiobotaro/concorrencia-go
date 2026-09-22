@@ -1,0 +1,25 @@
+# 🔐 Goroutine dona do estado
+
+**Também conhecido como:** monitor, confinamento, ator. O último é aproximado. No modelo de atores a mensagem vai para o ator pelo nome, e aqui ela vai por canais. É a mesma diferença entre Erlang e Go comentada na introdução.
+
+O provérbio diz "_Don't communicate by sharing memory, share memory by communicating_", ou seja, não comunique compartilhando memória, compartilhe memória comunicando. Em vez de proteger uma variável com mutex e deixar várias _goroutines_ mexerem nela, uma única _goroutine_ é dona do estado, e as outras pedem alterações e leituras por canais. Não há corrida porque só uma _goroutine_ toca o dado. A [janela deslizante](../janelas_deslizantes/README.md) já usa essa técnica por dentro. Aqui ela é o assunto principal.
+
+A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), apresenta a técnica como um laço `for` com `select` e estado local, e a resume assim: a _goroutine_ serializa o acesso ao próprio estado mutável, sem mutex, sem variável de condição e sem _callback_. É a primeira das três técnicas da palestra. As outras duas, o canal de resposta e o canal `nil`, estão em [parada com confirmação](../cancelamento/README.md#-parada-com-confirmação) e no [fan-in com select](../fan_in/README.md#fan-in-com-uma-goroutine-e-select).
+
+No exemplo, a _goroutine_ `contador` é dona de um mapa de contagem por chave. Três _goroutines_ enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](../requisicao_resposta/README.md). O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
+
+O exemplo inteiro está em [`dono_do_estado.go`](./dono_do_estado.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).
+
+## E com mutex?
+
+O contraponto também vem de Pike, no provérbio "_Channels orchestrate; mutexes serialize_". Se tudo o que você precisa é serializar o acesso a um contador ou a um mapa, um `sync.Mutex` é mais simples e mais claro. A [versão abaixo](./com_mutex.go) faz isso e produz o mesmo resultado.
+
+Quando a _goroutine_ dona do estado compensa?
+
+- Quando há regras sobre _como_ o estado muda, como validação, ordem ou eventos.
+- Quando ela precisa reagir a vários canais com `select`, como entradas, prazos e cancelamento. É o caso da janela deslizante.
+- Quando o estado tem ciclo de vida próprio.
+
+Se nada disso se aplica, use o mutex.
+
+A variante está em [`com_mutex.go`](./com_mutex.go).
