@@ -20,6 +20,7 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
 
 Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as _goroutines_; depois vêm o controle de ritmo, a conversa entre _goroutines_ e, por fim, como encerrar e supervisionar.
 
+- [🗺️ Olá Mundo](./ola_mundo/README.md): uma _goroutine_ envia uma mensagem por um canal e a função principal a recebe.
 - [🆕 Geradores](./geradores/README.md): uma _goroutine_ produz uma sequência de valores em um canal e para quando o contexto é cancelado.
 - [🚧 Trabalhador (worker)](./trabalhador/README.md): uma _goroutine_ consome valores de um canal e avisa, fechando outro, quando terminou.
 - [🏭 Pipeline](./pipeline/README.md): estágios encadeados por canais, cada um transformando o que recebe.
