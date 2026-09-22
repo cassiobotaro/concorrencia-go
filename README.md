@@ -12,12 +12,12 @@ Outras influências:
 
 - O [artigo](https://go.dev/blog/pipelines) sobre _pipelines_ e cancelamento em Go.
 - A palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide) de Rob Pike (Google I/O 2012), de onde vêm os geradores, o fan-in e o primeiro a responder.
-- A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide) de Sameer Ajmani (Google I/O 2013), de onde vêm o laço `for` com `select` e estado local, a parada confirmada por canal de resposta e o canal `nil` no `select`. As duas palestras são anteriores ao pacote `context`, e a abertura da [Parte 2](#parte-2--encerrando-goroutines) diz o que mudou com ele.
+- A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide) de Sameer Ajmani (Google I/O 2013), de onde vêm o laço `for` com `select` e estado local, a parada confirmada por canal de resposta e o canal `nil` no `select`. As duas palestras são anteriores ao pacote `context`, e a abertura da [Parte 4](#parte-4--encerrar-e-supervisionar) diz o que mudou com ele.
 - Os [Go Proverbs](https://go-proverbs.github.io/), também de Rob Pike (Gopherfest 2015): "_Don't communicate by sharing memory, share memory by communicating_", "_Concurrency is not parallelism_", "_Channels orchestrate; mutexes serialize_" e "_Clear is better than clever_".
 
 O texto parte do princípio de que você conhece Go, inclusive _goroutines_, canais, `select` e `sync.WaitGroup`. Se alguma dessas peças for nova, passe antes pelo [Tour of Go](https://go.dev/tour/concurrency/1), pelos capítulos de concorrência do [Go by Example](https://gobyexample.com/goroutines), que cobrem canais com e sem buffer, direção, `select`, timeouts, fechamento de canal e `WaitGroup`, e pela seção de concorrência do [Effective Go](https://go.dev/doc/effective_go#concurrency). Os padrões daqui usam essas peças sem explicá-las de novo.
 
-Cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--padrões-básicos) traz os padrões básicos. A [Parte 2](#parte-2--encerrando-goroutines) ensina a encerrar _goroutines_. A [Parte 3](#parte-3--controlando-o-ritmo) trata de produtores e consumidores em ritmos diferentes. A [Parte 4](#parte-4--padrões-avançados) reúne as combinações. Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
+Cada parte vai do mais simples ao mais complexo. A [Parte 1](#parte-1--padrões-básicos) traz os padrões básicos, que são a forma dos canais entre as _goroutines_. A [Parte 2](#parte-2--controlando-o-ritmo) trata de produtores e consumidores em ritmos diferentes. A [Parte 3](#parte-3--conversa-entre-goroutines) é sobre uma _goroutine_ responder a outra. A [Parte 4](#parte-4--encerrar-e-supervisionar) ensina a encerrar _goroutines_ e a vigiar as que continuam. Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
 
 Os `fmt.Print` dos exemplos estão ali só para você enxergar a execução e não fazem parte dos padrões. Em código real seriam _logs_, ou nem existiriam.
 
@@ -37,21 +37,21 @@ Os mesmos padrões aparecem com outros nomes em livros, artigos e outras linguag
   - [⚗️ Fan-in](#️-fan-in)
     - [Fan-in com uma _goroutine_ e `select`](#fan-in-com-uma-goroutine-e-select)
   - [👷 Grupo de Trabalhadores (pool of workers)](#-grupo-de-trabalhadores-pool-of-workers)
-  - [📨 Requisição e resposta](#-requisição-e-resposta)
-- [Parte 2 · Encerrando goroutines](#parte-2--encerrando-goroutines)
-  - [🤝 Parada com confirmação](#-parada-com-confirmação)
-  - [🧩 Combinar sinais de parada (or-channel)](#-combinar-sinais-de-parada-or-channel)
-- [Parte 3 · Controlando o ritmo](#parte-3--controlando-o-ritmo)
+- [Parte 2 · Controlando o ritmo](#parte-2--controlando-o-ritmo)
   - [🚦 Contrapressão (backpressure)](#-contrapressão-backpressure)
   - [🚥 Semáforo (paralelismo limitado)](#-semáforo-paralelismo-limitado)
     - [E com errgroup?](#e-com-errgroup)
   - [🎫 Sistema de ticket](#-sistema-de-ticket)
   - [📦 Processamento em lote (batch processing)](#-processamento-em-lote-batch-processing)
   - [🪟 Janela deslizante](#-janela-deslizante)
-- [Parte 4 · Padrões avançados](#parte-4--padrões-avançados)
+- [Parte 3 · Conversa entre goroutines](#parte-3--conversa-entre-goroutines)
+  - [📨 Requisição e resposta](#-requisição-e-resposta)
   - [🔐 Goroutine dona do estado](#-goroutine-dona-do-estado)
     - [E com mutex?](#e-com-mutex)
   - [🏁 Primeiro a responder](#-primeiro-a-responder)
+- [Parte 4 · Encerrar e supervisionar](#parte-4--encerrar-e-supervisionar)
+  - [🤝 Parada com confirmação](#-parada-com-confirmação)
+  - [🧩 Combinar sinais de parada (or-channel)](#-combinar-sinais-de-parada-or-channel)
   - [💓 Heartbeat](#-heartbeat)
 - [Curiosidade](#curiosidade)
   - [⛓️ Daisy-chain](#️-daisy-chain)
@@ -68,7 +68,7 @@ Um gerador é uma função que dispara uma _goroutine_ para escrever uma sequên
 
 No [exemplo](./geradores/geradores.go), `sequenciaNumeros` gera mil inteiros. A função principal lê o canal e imprime os valores. Com o `range`, a iteração continua até o canal ser fechado.
 
-Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disputa com `ctx.Done()`. Sem isso, um consumidor que parasse de ler no meio deixaria a _goroutine_ presa para sempre no próximo envio, com o canal e tudo o que ela segura. Com o contexto, quem consome cancela, e a _goroutine_ sai do laço e fecha o canal. No `main` isso não chega a acontecer, porque o laço lê os mil valores. O `exemplo_test.go` da pasta faz o outro caminho: lê um valor, cancela e drena o canal até ele fechar, o que prova que a _goroutine_ terminou. É a forma de escrever um gerador em código de hoje, e a abertura da [Parte 2](#parte-2--encerrando-goroutines) diz o que acontece quando ela falta.
+Repare no `context.Context` e no `select` dentro da _goroutine_. Cada envio disputa com `ctx.Done()`. Sem isso, um consumidor que parasse de ler no meio deixaria a _goroutine_ presa para sempre no próximo envio, com o canal e tudo o que ela segura. Com o contexto, quem consome cancela, e a _goroutine_ sai do laço e fecha o canal. No `main` isso não chega a acontecer, porque o laço lê os mil valores. O `exemplo_test.go` da pasta faz o outro caminho: lê um valor, cancela e drena o canal até ele fechar, o que prova que a _goroutine_ terminou. É a forma de escrever um gerador em código de hoje, e a abertura da [Parte 4](#parte-4--encerrar-e-supervisionar) diz o que acontece quando ela falta.
 
 O custo é que a responsabilidade passa para quem consome. Ele precisa criar o contexto e cancelar ao sair, mesmo quando leu tudo, e o `defer cancelar()` do exemplo está ali por isso. Esquecer o `cancel` é um erro que o `go vet` aponta (`lostcancel`): o contexto filho fica registrado no pai até o pai ser cancelado.
 
@@ -669,218 +669,7 @@ func main() {
 }
 ```
 
-### 📨 Requisição e resposta
-
-**Também conhecido como:** canal de resposta, _RPC_ interno, _restoring sequencing_ (o nome que Rob Pike dá a um uso específico da ideia, comentado abaixo).
-
-Canais são valores como qualquer outro, então uma mensagem pode carregar um canal. Quem envia uma requisição inclui nela o canal pelo qual quer receber a resposta e fica bloqueado lendo desse canal. Quem atende processa e responde no canal que veio na mensagem. Nenhum estado é compartilhado, pois pedido e resposta viajam por canais. É assim que se faz uma _goroutine_ funcionar como um serviço, e a ideia reaparece na [goroutine dona do estado](#-goroutine-dona-do-estado).
-
-No exemplo, a função principal envia cinco requisições ao `servico` e espera cada resposta antes de enviar a próxima. O campo `resposta` é declarado como `chan<- int`, então o serviço só pode escrever nele.
-
-Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike usa a mesma ideia para "restaurar a sequência" de um fan-in. Cada mensagem carrega um canal `wait`, e quem produziu só envia a próxima depois que o leitor avisa, por esse canal, que terminou de processar a anterior.
-
-```go
-package main
-
-import "fmt"
-
-// requisicao carrega, além do valor, o canal pelo qual quem pediu quer
-// receber a resposta. O serviço só precisa escrever nele, por isso chan<-.
-type requisicao struct {
-	valor    int
-	resposta chan<- int
-}
-
-// servico atende uma requisição por vez e responde no canal que veio
-// dentro da própria mensagem.
-func servico(entrada <-chan requisicao) {
-	for req := range entrada {
-		req.resposta <- req.valor * 2
-	}
-}
-
-func main() {
-	entrada := make(chan requisicao)
-	pronto := make(chan struct{})
-	go func() {
-		servico(entrada)
-		close(pronto)
-	}()
-
-	for i := range 5 {
-		resposta := make(chan int)
-		entrada <- requisicao{valor: i, resposta: resposta}
-		// Fica bloqueado até o serviço responder
-		fmt.Println("resposta:", <-resposta)
-	}
-
-	// Sem mais requisições: o serviço termina
-	close(entrada)
-	<-pronto
-}
-```
-
-## Parte 2 · Encerrando goroutines
-
-Os exemplos da Parte 1 já recebem um `context.Context` e saem quando ele é cancelado. O motivo é o vazamento. Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler nunca termina, o coletor de lixo não recolhe _goroutines_, e a memória e os recursos que ela segura ficam presos até o fim do programa. Em um servidor que roda por meses, isso é um vazamento de memória.
-
-Desde o Go 1.26 dá para encontrar essas _goroutines_. O perfil `goroutineleak`, do pacote `runtime/pprof`, lista as que estão bloqueadas em um canal ou mutex que nenhuma _goroutine_ viva alcança. É experimental, atrás de `GOEXPERIMENT=goroutineleakprofile`, e aparece também em `/debug/pprof/goroutineleak`. Para ir mais fundo em `context`, veja [este repositório](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
-
-As duas palestras que mais aparecem aqui, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013.
-
-Esta parte trata do que vem depois de mandar parar: como saber que a _goroutine_ parou e como juntar vários motivos de parada em um só. Mostra a forma com `context`, que é a que você vai encontrar em código de hoje, e cita a das palestras onde ela ajuda a entender o que o `context` faz por dentro.
-
-### 🤝 Parada com confirmação
-
-**Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
-
-Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Nas palestras isso era feito à mão. Rob Pike, em [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), reaproveita o canal `quit`: quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Sameer Ajmani, em [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), usa [requisição e resposta](#-requisição-e-resposta): o método `Close` envia um canal de resposta por um `chan chan error` e espera nele, e a _goroutine_ faz a limpeza e responde com o erro, se houver. Nos dois, o pedido desce e a resposta sobe pelo mesmo mecanismo.
-
-O `context` faz só a metade de baixo. Ele leva o sinal de quem chama para quem é chamado e nunca traz nada de volta. Para a metade de cima, o costume hoje é juntar o `context` com um `errgroup`, o mesmo pacote visto na [variante do semáforo](#e-com-errgroup). A _goroutine_ roda dentro de `g.Go`, faz a limpeza ao ver `ctx.Done()` e devolve o erro. Quem quer parar chama `cancel()` e depois `g.Wait()`, que bloqueia até a _goroutine_ retornar e entrega esse erro. É o `Close` de Ajmani em duas chamadas, sem canal de resposta escrito à mão. O [exemplo](./cancelamento/context_errgroup.go) faz isso: o gerador libera os recursos, e só então o programa segue. O `time.Sleep` dentro de `limpeza` é andaime, está ali para a liberação levar tempo visível.
-
-Quando a confirmação precisa carregar mais do que um erro, o canal de resposta continua sendo a forma. `context.WithCancelCause`, que existe desde o Go 1.20, deixa quem cancela dizer o motivo, lido do outro lado com `context.Cause(ctx)`. Isso é informação descendo, de quem cancela para quem é cancelado, e não substitui a confirmação.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-
-	"golang.org/x/sync/errgroup"
-)
-
-// tagarelaComContext envia mensagens até o contexto ser cancelado. Antes
-// de sair faz a limpeza e devolve o motivo do cancelamento. A confirmação
-// é o próprio retorno: quem chamou espera por ele com g.Wait.
-func tagarelaComContext(ctx context.Context, nome string, saida chan<- string) error {
-	for i := 0; ; i++ {
-		select {
-		case saida <- fmt.Sprintf("%s %d", nome, i):
-		case <-ctx.Done():
-			limpeza()
-			return ctx.Err()
-		}
-	}
-}
-
-// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
-func limpeza() {
-	fmt.Println("gerador: liberando recursos...")
-	time.Sleep(100 * time.Millisecond)
-}
-
-func paradaComErrgroup() {
-	ctx, cancelar := context.WithCancel(context.Background())
-	saida := make(chan string)
-
-	var g errgroup.Group
-	g.Go(func() error { return tagarelaComContext(ctx, "Bia", saida) })
-
-	for range 3 {
-		fmt.Println(<-saida)
-	}
-	// cancelar manda parar. Wait bloqueia até a goroutine retornar e traz
-	// o erro dela: o pedido desce pelo contexto e a resposta sobe pelo
-	// errgroup.
-	cancelar()
-	fmt.Println("gerador:", g.Wait())
-}
-```
-
-### 🧩 Combinar sinais de parada (or-channel)
-
-**Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_, do mesmo livro citado abaixo, que é outra técnica. Ele embrulha a leitura de um canal para que ela também respeite um sinal de parada.
-
-Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em 2017, quando o livro citado abaixo saiu, cada um desses era um canal diferente, e a resposta era combinar os canais em um só. Hoje os três são contextos. O da requisição sempre foi, um _handler_ HTTP recebe `r.Context()`. O prazo é `context.WithTimeout`. E desde o Go 1.16, `signal.NotifyContext` devolve um contexto cancelado quando o sinal do sistema chega. Quando as origens são contextos, a resposta é derivar um do outro. O filho é cancelado quando o pai é, e a _goroutine_ fica com um único `case`, o `ctx.Done()`. A primeira metade do [exemplo](./cancelamento/qualquer.go) faz isso com as três origens.
-
-O que sobra para combinar à mão é o que não é contexto: o canal `pronto` de outra _goroutine_, a saída de um gerador, qualquer `chan struct{}` fechado como sinal. A função `qualquer` combina esses canais em um só, que é fechado quando o primeiro deles fechar. Na segunda metade do exemplo, a _goroutine_ para quando o contexto acabar ou quando um colega terminar, o que vier primeiro.
-
-A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Ela toma dois cuidados. O primeiro é o `sync.Once`, que garante um único `close` mesmo que dois sinais cheguem juntos, já que fechar um canal duas vezes causa _panic_. O segundo é que cada _goroutine_ também observa a própria saída. Assim, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem.
-
-Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_". Para o sentido inverso, ligar um contexto a algo que não entende contextos, `context.AfterFunc(ctx, f)` roda `f` quando o contexto é cancelado, desde o Go 1.21.
-
-De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), cujo código fecha um canal `quit` para encerrar as _goroutines_ do `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/signal"
-	"sync"
-	"time"
-)
-
-// qualquer combina vários sinais de parada em um só: o canal devolvido é
-// fechado assim que o primeiro dos canais recebidos for fechado.
-func qualquer(canais ...<-chan struct{}) <-chan struct{} {
-	saida := make(chan struct{})
-	// Mais de um sinal pode chegar ao mesmo tempo, e fechar um canal duas
-	// vezes causa panic: o sync.Once garante um único close.
-	var once sync.Once
-	for _, c := range canais {
-		go func() {
-			select {
-			case <-c:
-				once.Do(func() { close(saida) })
-			case <-saida:
-				// Outro sinal chegou primeiro: esta goroutine termina
-				// em vez de ficar presa esperando `c` para sempre.
-			}
-		}()
-	}
-	return saida
-}
-
-// trabalharAte imprime a cada 100ms até o canal parar ser fechado. Um
-// único case de parada, não importa quantas origens existam.
-func trabalharAte(parar <-chan struct{}) {
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			fmt.Println("trabalhando...")
-		case <-parar:
-			return
-		}
-	}
-}
-
-func combinarSinais() {
-	// Três origens para o sinal de parada, e as três são contextos: um
-	// deriva do outro, e cancelar o pai cancela os filhos.
-	ctx, pararNoSinal := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer pararNoSinal()
-	ctx, cancelarRequisicao := context.WithCancel(ctx) // um handler HTTP teria r.Context()
-	defer cancelarRequisicao()
-	ctx, cancelarPrazo := context.WithTimeout(ctx, 250*time.Millisecond)
-	defer cancelarPrazo()
-
-	trabalharAte(ctx.Done())
-	fmt.Println("contexto cancelado:", ctx.Err())
-
-	// qualquer fica para o que não é contexto. Aqui, um canal que outra
-	// goroutine fecha ao terminar; a goroutine é andaime, simula um colega
-	// que acaba antes do prazo.
-	ctx, cancelar := context.WithTimeout(context.Background(), time.Second)
-	defer cancelar()
-	colegaTerminou := make(chan struct{})
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		close(colegaTerminou)
-	}()
-
-	trabalharAte(qualquer(ctx.Done(), colegaTerminou))
-	fmt.Println("um dos sinais de parada chegou (aqui, o colega terminou)")
-}
-```
-
-## Parte 3 · Controlando o ritmo
+## Parte 2 · Controlando o ritmo
 
 O que fazer quando quem produz e quem consome andam em velocidades diferentes. Cada padrão desta parte dá uma resposta: fazer o produtor esperar, limitar quantos executam ao mesmo tempo, limitar a taxa, agrupar o trabalho ou descartar o que ficou velho.
 
@@ -1420,9 +1209,60 @@ func main() {
 }
 ```
 
-## Parte 4 · Padrões avançados
+## Parte 3 · Conversa entre goroutines
 
-Padrões que combinam várias peças das partes anteriores, como canais de resposta, `select`, buffer, timeout e `context`. Vale ler as outras partes antes.
+Nos padrões anteriores, o canal só carrega dados em um sentido. Nesta parte a mensagem leva junto um canal de resposta, ou esperar a resposta faz parte do padrão. É assim que uma _goroutine_ vira um serviço, que um estado ganha uma dona e que a mesma pergunta pode ser feita a várias réplicas de uma vez.
+
+### 📨 Requisição e resposta
+
+**Também conhecido como:** canal de resposta, _RPC_ interno, _restoring sequencing_ (o nome que Rob Pike dá a um uso específico da ideia, comentado abaixo).
+
+Canais são valores como qualquer outro, então uma mensagem pode carregar um canal. Quem envia uma requisição inclui nela o canal pelo qual quer receber a resposta e fica bloqueado lendo desse canal. Quem atende processa e responde no canal que veio na mensagem. Nenhum estado é compartilhado, pois pedido e resposta viajam por canais. É assim que se faz uma _goroutine_ funcionar como um serviço, e a ideia reaparece na [goroutine dona do estado](#-goroutine-dona-do-estado).
+
+No exemplo, a função principal envia cinco requisições ao `servico` e espera cada resposta antes de enviar a próxima. O campo `resposta` é declarado como `chan<- int`, então o serviço só pode escrever nele.
+
+Na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), Pike usa a mesma ideia para "restaurar a sequência" de um fan-in. Cada mensagem carrega um canal `wait`, e quem produziu só envia a próxima depois que o leitor avisa, por esse canal, que terminou de processar a anterior.
+
+```go
+package main
+
+import "fmt"
+
+// requisicao carrega, além do valor, o canal pelo qual quem pediu quer
+// receber a resposta. O serviço só precisa escrever nele, por isso chan<-.
+type requisicao struct {
+	valor    int
+	resposta chan<- int
+}
+
+// servico atende uma requisição por vez e responde no canal que veio
+// dentro da própria mensagem.
+func servico(entrada <-chan requisicao) {
+	for req := range entrada {
+		req.resposta <- req.valor * 2
+	}
+}
+
+func main() {
+	entrada := make(chan requisicao)
+	pronto := make(chan struct{})
+	go func() {
+		servico(entrada)
+		close(pronto)
+	}()
+
+	for i := range 5 {
+		resposta := make(chan int)
+		entrada <- requisicao{valor: i, resposta: resposta}
+		// Fica bloqueado até o serviço responder
+		fmt.Println("resposta:", <-resposta)
+	}
+
+	// Sem mais requisições: o serviço termina
+	close(entrada)
+	<-pronto
+}
+```
 
 ### 🔐 Goroutine dona do estado
 
@@ -1568,7 +1408,7 @@ func comMutex() {
 
 Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com um prazo em `context.WithTimeout`, o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
 
-A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o cancelamento da [Parte 2](#parte-2--encerrando-goroutines) aplicado ao padrão.
+A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o cancelamento por `context`, assunto da [Parte 4](#parte-4--encerrar-e-supervisionar), aplicado ao padrão.
 
 Repare no canal com buffer de tamanho `len(replicas)`. Mesmo com o cancelamento, uma perdedora pode terminar entre a chegada da vencedora e o `cancel()`. Com um canal sem buffer ela ficaria bloqueada no envio para sempre, pois ninguém mais vai ler. Com uma vaga por réplica, ela deposita a resposta e termina.
 
@@ -1649,6 +1489,166 @@ func main() {
 		return
 	}
 	fmt.Println(resposta)
+}
+```
+
+## Parte 4 · Encerrar e supervisionar
+
+Os geradores das partes anteriores já recebem um `context.Context` e saem quando ele é cancelado. O motivo é o vazamento. Uma _goroutine_ bloqueada em um canal que ninguém mais vai ler nunca termina, o coletor de lixo não recolhe _goroutines_, e a memória e os recursos que ela segura ficam presos até o fim do programa. Em um servidor que roda por meses, isso é um vazamento de memória.
+
+Desde o Go 1.26 dá para encontrar essas _goroutines_. O perfil `goroutineleak`, do pacote `runtime/pprof`, lista as que estão bloqueadas em um canal ou mutex que nenhuma _goroutine_ viva alcança. É experimental, atrás de `GOEXPERIMENT=goroutineleakprofile`, e aparece também em `/debug/pprof/goroutineleak`. Para ir mais fundo em `context`, veja [este repositório](https://github.com/cassiobotaro/contexto) e a segunda metade do artigo sobre [_pipelines_](https://go.dev/blog/pipelines).
+
+As duas palestras que mais aparecem aqui, a de Rob Pike (2012) e a de Sameer Ajmani (2013), são anteriores ao pacote `context`, que só entrou na biblioteca padrão no Go 1.7, em 2016. Foi o próprio Ajmani quem o apresentou, no [post](https://go.dev/blog/context) de julho de 2014. O que o `context` padronizou foi uma única técnica das palestras: o canal `quit`, fechado para avisar todo mundo de uma vez. É o `ctx.Done()`. O resto continua sem substituto, porque o contexto leva o sinal em um sentido só, de quem chama para quem é chamado, e nunca traz resultado de volta. O laço `for` com `select` e estado local, o canal de resposta que confirma a parada com um erro e o canal `nil` que desliga um `case` são escritos à mão hoje do mesmo jeito que em 2013.
+
+Esta parte trata do que vem depois de mandar parar, e do que fazer quando ninguém mandou: como saber que a _goroutine_ parou, como juntar vários motivos de parada em um só e como descobrir que um trabalhador travou sem avisar. Mostra a forma com `context`, que é a que você vai encontrar em código de hoje, e cita a das palestras onde ela ajuda a entender o que o `context` faz por dentro.
+
+### 🤝 Parada com confirmação
+
+**Também conhecido como:** _shutdown_ com _ack_, _graceful stop_.
+
+Mandar "pare" não garante que a _goroutine_ já parou. Se ela precisa liberar recursos antes de sair (fechar arquivos, encerrar conexões), quem pediu a parada deve esperar a confirmação. Nas palestras isso era feito à mão. Rob Pike, em [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), reaproveita o canal `quit`: quem quer parar envia "pare", a _goroutine_ faz a limpeza e responde no mesmo canal. Sameer Ajmani, em [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), usa [requisição e resposta](#-requisição-e-resposta): o método `Close` envia um canal de resposta por um `chan chan error` e espera nele, e a _goroutine_ faz a limpeza e responde com o erro, se houver. Nos dois, o pedido desce e a resposta sobe pelo mesmo mecanismo.
+
+O `context` faz só a metade de baixo. Ele leva o sinal de quem chama para quem é chamado e nunca traz nada de volta. Para a metade de cima, o costume hoje é juntar o `context` com um `errgroup`, o mesmo pacote visto na [variante do semáforo](#e-com-errgroup). A _goroutine_ roda dentro de `g.Go`, faz a limpeza ao ver `ctx.Done()` e devolve o erro. Quem quer parar chama `cancel()` e depois `g.Wait()`, que bloqueia até a _goroutine_ retornar e entrega esse erro. É o `Close` de Ajmani em duas chamadas, sem canal de resposta escrito à mão. O [exemplo](./cancelamento/context_errgroup.go) faz isso: o gerador libera os recursos, e só então o programa segue. O `time.Sleep` dentro de `limpeza` é andaime, está ali para a liberação levar tempo visível.
+
+Quando a confirmação precisa carregar mais do que um erro, o canal de resposta continua sendo a forma. `context.WithCancelCause`, que existe desde o Go 1.20, deixa quem cancela dizer o motivo, lido do outro lado com `context.Cause(ctx)`. Isso é informação descendo, de quem cancela para quem é cancelado, e não substitui a confirmação.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+)
+
+// tagarelaComContext envia mensagens até o contexto ser cancelado. Antes
+// de sair faz a limpeza e devolve o motivo do cancelamento. A confirmação
+// é o próprio retorno: quem chamou espera por ele com g.Wait.
+func tagarelaComContext(ctx context.Context, nome string, saida chan<- string) error {
+	for i := 0; ; i++ {
+		select {
+		case saida <- fmt.Sprintf("%s %d", nome, i):
+		case <-ctx.Done():
+			limpeza()
+			return ctx.Err()
+		}
+	}
+}
+
+// limpeza simula a liberação de recursos: fechar arquivos, conexões etc.
+func limpeza() {
+	fmt.Println("gerador: liberando recursos...")
+	time.Sleep(100 * time.Millisecond)
+}
+
+func paradaComErrgroup() {
+	ctx, cancelar := context.WithCancel(context.Background())
+	saida := make(chan string)
+
+	var g errgroup.Group
+	g.Go(func() error { return tagarelaComContext(ctx, "Bia", saida) })
+
+	for range 3 {
+		fmt.Println(<-saida)
+	}
+	// cancelar manda parar. Wait bloqueia até a goroutine retornar e traz
+	// o erro dela: o pedido desce pelo contexto e a resposta sobe pelo
+	// errgroup.
+	cancelar()
+	fmt.Println("gerador:", g.Wait())
+}
+```
+
+### 🧩 Combinar sinais de parada (or-channel)
+
+**Também conhecido como:** _or-channel_. Não confunda com o _or-done-channel_, do mesmo livro citado abaixo, que é outra técnica. Ele embrulha a leitura de um canal para que ela também respeite um sinal de parada.
+
+Às vezes uma _goroutine_ deve parar quando _qualquer um_ de vários sinais chegar: o contexto da requisição, um sinal do sistema operacional, um prazo global. Em 2017, quando o livro citado abaixo saiu, cada um desses era um canal diferente, e a resposta era combinar os canais em um só. Hoje os três são contextos. O da requisição sempre foi, um _handler_ HTTP recebe `r.Context()`. O prazo é `context.WithTimeout`. E desde o Go 1.16, `signal.NotifyContext` devolve um contexto cancelado quando o sinal do sistema chega. Quando as origens são contextos, a resposta é derivar um do outro. O filho é cancelado quando o pai é, e a _goroutine_ fica com um único `case`, o `ctx.Done()`. A primeira metade do [exemplo](./cancelamento/qualquer.go) faz isso com as três origens.
+
+O que sobra para combinar à mão é o que não é contexto: o canal `pronto` de outra _goroutine_, a saída de um gerador, qualquer `chan struct{}` fechado como sinal. A função `qualquer` combina esses canais em um só, que é fechado quando o primeiro deles fechar. Na segunda metade do exemplo, a _goroutine_ para quando o contexto acabar ou quando um colega terminar, o que vier primeiro.
+
+A implementação usa uma _goroutine_ por canal de entrada, e a primeira a ser acordada fecha a saída. Ela toma dois cuidados. O primeiro é o `sync.Once`, que garante um único `close` mesmo que dois sinais cheguem juntos, já que fechar um canal duas vezes causa _panic_. O segundo é que cada _goroutine_ também observa a própria saída. Assim, quando um sinal vence, as demais terminam em vez de vazarem esperando canais que talvez nunca fechem.
+
+Existem alternativas. Para duas ou três origens, um `select` explícito é o mais claro. Para o caso geral há a versão recursiva, que divide a lista ao meio, e o `reflect.Select`. As duas funcionam, mas são mais engenhosas do que claras, e os Go Proverbs lembram que "_Clear is better than clever_" e "_Reflection is never clear_". Para o sentido inverso, ligar um contexto a algo que não entende contextos, `context.AfterFunc(ctx, f)` roda `f` quando o contexto é cancelado, desde o Go 1.21.
+
+De onde vem isso? Sinalizar a parada fechando um canal aparece no artigo sobre [_pipelines_](https://go.dev/blog/pipelines), com o canal `done`, e na palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), cujo código fecha um canal `quit` para encerrar as _goroutines_ do `Merge`. Nenhum dos dois combina vários sinais em um só. O _or-channel_, com esse nome, é do livro _Concurrency in Go_, de Katherine Cox-Buday (O'Reilly, 2017, capítulo 4), que usa a versão recursiva.
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
+)
+
+// qualquer combina vários sinais de parada em um só: o canal devolvido é
+// fechado assim que o primeiro dos canais recebidos for fechado.
+func qualquer(canais ...<-chan struct{}) <-chan struct{} {
+	saida := make(chan struct{})
+	// Mais de um sinal pode chegar ao mesmo tempo, e fechar um canal duas
+	// vezes causa panic: o sync.Once garante um único close.
+	var once sync.Once
+	for _, c := range canais {
+		go func() {
+			select {
+			case <-c:
+				once.Do(func() { close(saida) })
+			case <-saida:
+				// Outro sinal chegou primeiro: esta goroutine termina
+				// em vez de ficar presa esperando `c` para sempre.
+			}
+		}()
+	}
+	return saida
+}
+
+// trabalharAte imprime a cada 100ms até o canal parar ser fechado. Um
+// único case de parada, não importa quantas origens existam.
+func trabalharAte(parar <-chan struct{}) {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			fmt.Println("trabalhando...")
+		case <-parar:
+			return
+		}
+	}
+}
+
+func combinarSinais() {
+	// Três origens para o sinal de parada, e as três são contextos: um
+	// deriva do outro, e cancelar o pai cancela os filhos.
+	ctx, pararNoSinal := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer pararNoSinal()
+	ctx, cancelarRequisicao := context.WithCancel(ctx) // um handler HTTP teria r.Context()
+	defer cancelarRequisicao()
+	ctx, cancelarPrazo := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancelarPrazo()
+
+	trabalharAte(ctx.Done())
+	fmt.Println("contexto cancelado:", ctx.Err())
+
+	// qualquer fica para o que não é contexto. Aqui, um canal que outra
+	// goroutine fecha ao terminar; a goroutine é andaime, simula um colega
+	// que acaba antes do prazo.
+	ctx, cancelar := context.WithTimeout(context.Background(), time.Second)
+	defer cancelar()
+	colegaTerminou := make(chan struct{})
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		close(colegaTerminou)
+	}()
+
+	trabalharAte(qualquer(ctx.Done(), colegaTerminou))
+	fmt.Println("um dos sinais de parada chegou (aqui, o colega terminou)")
 }
 ```
 
