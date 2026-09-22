@@ -69,7 +69,7 @@ func main() {
 		trabalhos <- func() {
 			fmt.Println("processando ticket")
 		}
-		fmt.Println("trabalho ", i, " enviado")
+		fmt.Printf("trabalho %d enviado\n", i)
 	}
 
 	close(trabalhos)

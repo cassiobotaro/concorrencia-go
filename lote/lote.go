@@ -10,7 +10,7 @@ type req struct {
 }
 
 func processar(lote []req) {
-	fmt.Println("processando lote com valores: ", lote)
+	fmt.Printf("processando lote com valores: %v\n", lote)
 }
 
 func processadorLotes(entrada <-chan []req) <-chan struct{} {

@@ -42,7 +42,7 @@ func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 // `demora` simula o tempo de processamento de cada valor.
 func trabalhador(id int, entrada <-chan int, demora time.Duration) {
 	for valor := range entrada {
-		fmt.Println("id: ", id, " valor: ", valor)
+		fmt.Printf("id: %d valor: %d\n", id, valor)
 		time.Sleep(demora)
 	}
 }
