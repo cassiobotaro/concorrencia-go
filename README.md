@@ -48,6 +48,8 @@ Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as 
 - [Go Concurrency Patterns: Context](https://go.dev/blog/context), Sameer Ajmani, 2014.
 - [Go Concurrency Patterns: Pipelines and cancellation](https://go.dev/blog/pipelines), Sameer Ajmani, 2014.
 - [Concurrency is not parallelism](https://go.dev/blog/waza-talk), Rob Pike, 2012.
+- [Share Memory By Communicating](https://go.dev/blog/codelab-share), Andrew Gerrand, 2010.
+- [Go Concurrency Patterns: Timing out, moving on](https://go.dev/blog/concurrency-timeouts), Andrew Gerrand, 2010.
 - [Testing concurrent code with testing/synctest](https://go.dev/blog/synctest), Damien Neil, 2025.
 - [Testing Time (and other asynchronicities)](https://go.dev/blog/testing-time), Damien Neil, 2025.
 - [Go Proverbs](https://go-proverbs.github.io/), Rob Pike, Gopherfest 2015.
