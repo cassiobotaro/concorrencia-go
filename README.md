@@ -1734,61 +1734,87 @@ func comMutex() {
 
 Para não depender do servidor mais lento, envie a mesma requisição a várias réplicas e use a primeira resposta que chegar. É a técnica que Rob Pike usa no exemplo da busca do Google, na palestra [Go Concurrency Patterns](https://go.dev/talks/2012/concurrency.slide), para reduzir a latência de cauda. Combinada com o timeout visto em [select](#️-select-e-timeouts), o resultado é o que Pike descreve como um programa rápido, replicado e robusto.
 
-Repare no canal com buffer de tamanho `len(replicas)`. A função lê uma única resposta e retorna, mas as outras _goroutines_ ainda vão tentar enviar as suas. Com um canal sem buffer elas ficariam bloqueadas no envio para sempre, pois ninguém mais vai ler. Isso é um vazamento de _goroutines_, assunto da seção de [cancelamento](#-vazamento-de-goroutines-e-context). Com uma vaga por réplica, cada perdedora deposita sua resposta e termina.
+A palestra é de 2012, e o `First` de Pike só lê a primeira resposta. As perdedoras continuam trabalhando até o fim e jogam o resultado fora. Em uma chamada de rede, isso é uma requisição a mais no servidor por réplica. No [exemplo](./primeiro/primeiro.go), `primeiro` recebe um `context.Context`, deriva um filho com `context.WithCancel`, passa esse filho a cada réplica e cancela ao retornar. As perdedoras desistem no próximo `ctx.Done()`. Uma réplica de verdade faria o mesmo com `http.NewRequestWithContext`, que interrompe a requisição inteira quando o contexto é cancelado. É o [cancelamento](#-vazamento-de-goroutines-e-context) da Parte 3 aplicado ao padrão.
 
-No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um timeout de 20ms. O canal `resposta` tem buffer 1 pelo mesmo motivo.
+Repare no canal com buffer de tamanho `len(replicas)`. Mesmo com o cancelamento, uma perdedora pode terminar entre a chegada da vencedora e o `cancel()`. Com um canal sem buffer ela ficaria bloqueada no envio para sempre, pois ninguém mais vai ler. Com uma vaga por réplica, ela deposita a resposta e termina.
+
+No exemplo, as réplicas são simuladas com uma espera aleatória de até 100ms, então a vencedora muda a cada execução. A segunda parte combina `primeiro` com um prazo de 20ms. O prazo vem em um `context.WithTimeout`, e `primeiro` o repassa às réplicas, então o mesmo `ctx.Done()` que encerra a espera encerra também as réplicas.
 
 ```go
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"time"
 )
 
-// replica simula um servidor cuja latência varia a cada chamada.
-func replica(nome string) func(string) string {
-	return func(consulta string) string {
-		time.Sleep(rand.N(100 * time.Millisecond))
-		return fmt.Sprintf("%s respondeu a %q", nome, consulta)
+// replica simula um servidor cuja latência varia a cada chamada. Se o
+// contexto for cancelado antes da resposta, ela desiste, como faria uma
+// requisição HTTP feita com http.NewRequestWithContext.
+func replica(nome string) func(context.Context, string) (string, error) {
+	return func(ctx context.Context, consulta string) (string, error) {
+		select {
+		case <-time.After(rand.N(100 * time.Millisecond)):
+			return fmt.Sprintf("%s respondeu a %q", nome, consulta), nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
 }
 
 // primeiro envia a mesma consulta a todas as réplicas e devolve a primeira
-// resposta que chegar.
-func primeiro(consulta string, replicas ...func(string) string) string {
-	// O buffer tem uma vaga por réplica: as respostas perdedoras são
-	// depositadas sem bloquear. Sem ele, essas goroutines ficariam presas
-	// no envio para sempre, pois ninguém mais vai ler do canal.
-	c := make(chan string, len(replicas))
+// resposta que chegar. Ao retornar, cancela o contexto das outras, para
+// que as perdedoras parem de trabalhar em vez de responder à toa.
+func primeiro(ctx context.Context, consulta string, replicas ...func(context.Context, string) (string, error)) (string, error) {
+	ctx, cancelar := context.WithCancel(ctx)
+	defer cancelar()
+
+	// O buffer tem uma vaga por réplica. Uma perdedora pode terminar entre
+	// a chegada da vencedora e o cancel, e sem a vaga ficaria presa no
+	// envio para sempre, pois ninguém mais vai ler do canal.
+	respostas := make(chan string, len(replicas))
 	for _, r := range replicas {
-		go func() { c <- r(consulta) }()
+		go func() {
+			if resposta, err := r(ctx, consulta); err == nil {
+				respostas <- resposta
+			}
+		}()
 	}
-	return <-c
+
+	select {
+	case resposta := <-respostas:
+		return resposta, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 func main() {
-	replicas := []func(string) string{
+	replicas := []func(context.Context, string) (string, error){
 		replica("réplica 1"),
 		replica("réplica 2"),
 		replica("réplica 3"),
 	}
 
-	fmt.Println(primeiro("golang", replicas...))
+	resposta, err := primeiro(context.Background(), "golang", replicas...)
+	if err != nil {
+		fmt.Println("erro:", err)
+		return
+	}
+	fmt.Println(resposta)
 
 	// Combinado com timeout: usa a resposta mais rápida, desde que chegue
-	// em até 20ms. O buffer de tamanho 1 tem o mesmo papel: se o timeout
-	// vencer, a goroutine ainda consegue depositar a resposta e terminar.
-	resposta := make(chan string, 1)
-	go func() { resposta <- primeiro("csp", replicas...) }()
-
-	select {
-	case r := <-resposta:
-		fmt.Println(r)
-	case <-time.After(20 * time.Millisecond):
+	// em até 20ms. O prazo vem no contexto, e primeiro o repassa às réplicas.
+	ctx, cancelar := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelar()
+	resposta, err = primeiro(ctx, "csp", replicas...)
+	if err != nil {
 		fmt.Println("tempo esgotado: nenhuma réplica respondeu em 20ms")
+		return
 	}
+	fmt.Println(resposta)
 }
 ```
 
