@@ -19,7 +19,6 @@ func processadorLotes(entrada <-chan []req) <-chan struct{} {
 		for lote := range entrada {
 			processar(lote)
 		}
-		// Sinaliza o término do processamento fechando o canal
 		close(pronto)
 	}()
 	return pronto
@@ -56,12 +55,10 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 
 		for {
 			select {
-			// enquanto houver itens para processar
 			case item, ok := <-entrada:
 				if !ok {
-					// envia o que tiver no buffer antes de sair
+					// Entrada fechada: o lote parcial ainda é enviado
 					descarregar()
-					// para o loop quando o canal de entrada for fechado
 					return
 				}
 				// Primeiro item do lote: começa a contar o prazo
@@ -69,16 +66,14 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 					prazo.Reset(intervalo)
 				}
 				buf = append(buf, item)
-				// se o buffer estiver cheio, descarrega
 				if len(buf) == tamanhoLote {
 					descarregar()
 				}
 
-			// Se o intervalo passou, descarrega o que tiver no buffer
+			// O intervalo passou sem o lote encher
 			case <-prazo.C:
 				descarregar()
 
-			// Se receber um sinal de descarga, descarrega o que tiver no buffer
 			case <-descarga:
 				descarregar()
 			}
@@ -91,10 +86,8 @@ func main() {
 	entrada := make(chan req)
 	descarga := make(chan struct{})
 
-	// inicia de forma concorrente o processamento em lotes:
-	// lotes de 3 itens ou 100ms, o que acontecer primeiro
+	// Lotes de 3 itens ou 100ms, o que acontecer primeiro
 	saida := processamentoLotes(entrada, descarga, 3, 100*time.Millisecond)
-	// O consumidor de lotes será iniciado de forma concorrente
 	pronto := processadorLotes(saida)
 
 	entrada <- req{valor: 1}
@@ -112,15 +105,12 @@ func main() {
 	entrada <- req{valor: 6}
 	time.Sleep(150 * time.Millisecond)
 
-	// Envia mais dois itens, não o suficiente para descarregar
-	// o lote.
+	// Mais dois itens, que não enchem o lote. Fechar a entrada
+	// descarrega o que sobrou.
 	entrada <- req{valor: 7}
 	entrada <- req{valor: 8}
-	// Eles serão processados mesmo assim.
-
 	close(entrada)
 
-	// Aguarda todo o processamento do processador de lotes
-	// antes de encerrar o programa
+	// Espera o último lote ser processado
 	<-pronto
 }

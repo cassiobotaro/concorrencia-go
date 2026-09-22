@@ -7,7 +7,7 @@ import (
 )
 
 // fanin combina vários canais de entrada em um único canal de saída.
-// Utiliza um WaitGroup para saber quando todos os canais de entrada foram
+// Usa um WaitGroup para saber quando todos os canais de entrada foram
 // processados. Cada envio disputa com ctx.Done(), então as goroutines saem
 // se o consumidor cancelar em vez de ficarem presas no envio.
 func fanin(ctx context.Context, entradas ...<-chan int) <-chan int {
@@ -36,7 +36,7 @@ func fanin(ctx context.Context, entradas ...<-chan int) <-chan int {
 	return saida
 }
 
-// sequenciaNumeros cria um canal que envia uma sequência de números de inicial a final.
+// sequenciaNumeros envia os inteiros de inicial a final por um canal.
 func sequenciaNumeros(ctx context.Context, inicial, final int) <-chan int {
 	saida := make(chan int)
 	go func() {
@@ -63,7 +63,6 @@ func main() {
 		sequenciaNumeros(ctx, 21, 30),
 	)
 
-	// Lê e imprime os valores do canal combinado
 	for valor := range canal {
 		fmt.Printf("valor: %v\n", valor)
 	}

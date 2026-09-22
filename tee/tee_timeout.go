@@ -12,12 +12,11 @@ import (
 func teeComTimeout(entrada <-chan int, timeout time.Duration, saidas ...chan<- int) {
 	for valor := range entrada {
 		for i, saida := range saidas {
-			// Um select por saída: o que acontecer primeiro, o envio ou o timeout
+			// Um select por saída: vence o envio ou o timeout
 			select {
 			case saida <- valor:
 			case <-time.After(timeout):
-				// Sinalizamos o descarte explicitamente para não perder
-				// a informação silenciosamente.
+				// Avisa o descarte em vez de perder o valor em silêncio
 				fmt.Printf("tee: descarte por timeout, saida=%d valor=%d\n", i+1, valor)
 			}
 		}

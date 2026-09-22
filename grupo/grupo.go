@@ -36,7 +36,7 @@ func grupoDeTrabalhadores(ctx context.Context, entrada <-chan int, nTrabalhadore
 		})
 	}
 
-	// Goroutine para fechar o canal de saída quando todos os trabalhadores terminarem
+	// Fecha a saída quando todos os trabalhadores terminarem
 	go func() {
 		wg.Wait()
 		close(saida)
@@ -66,7 +66,7 @@ func main() {
 
 	// Produz uma sequência de 10 valores
 	entrada := sequenciaNumeros(ctx, 1, 10)
-	// Um grupo de trabalhadores irá processar esses números
+	// Dois trabalhadores dividem esses valores
 	saida := grupoDeTrabalhadores(ctx, entrada, 2)
 
 	// Somente termina quando todo o trabalho for processado

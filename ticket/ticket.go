@@ -14,10 +14,10 @@ func trabalhador(tickets <-chan ticket, trabalhos <-chan func()) {
 		// sem gastar um ticket.
 		trabalho, ok := <-trabalhos
 		if !ok {
-			return // canal de trabalhos fechado
+			return
 		}
-		<-tickets  // espera autorização antes de executar
-		trabalho() // executa um trabalho
+		<-tickets // espera autorização antes de executar
+		trabalho()
 	}
 }
 
@@ -61,7 +61,6 @@ func main() {
 	go bilheteria(ctx, tickets, 1*time.Second, 10)
 	go func() {
 		trabalhador(tickets, trabalhos)
-		// Sinaliza o término fechando o canal
 		close(pronto)
 	}()
 

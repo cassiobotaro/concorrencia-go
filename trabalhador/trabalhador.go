@@ -11,7 +11,6 @@ func trabalhador(entrada <-chan int) {
 func main() {
 	entrada := make(chan int)
 	pronto := make(chan struct{})
-	// Um trabalhador é iniciado e aguarda por valores no canal de entrada
 	go func() {
 		trabalhador(entrada)
 		// Fechar o canal é o idioma para sinalizar um evento único:
@@ -21,9 +20,7 @@ func main() {
 	for i := range 10 {
 		entrada <- i
 	}
-	// Após ter enviado todos os valores, fecha o canal de entrada
-	// avisando ao trabalhador que o trabalho terminou
+	// Fechar a entrada encerra o range do trabalhador
 	close(entrada)
-	// Aguarda o trabalhador terminar
 	<-pronto
 }
