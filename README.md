@@ -1,4 +1,4 @@
-# Concorrência em Go
+# 🐹 Concorrência em Go
 
 Go é fundamentada no CSP (Communicating sequential processes) de Tony Hoare: os dados são compartilhados enviando mensagens por canais. No CSP de Hoare, e em Erlang, a mensagem vai direto para um processo, pelo nome. Go vem do ramo de Newsqueak, Alef e Limbo, em que o canal é um valor de primeira classe: pode ser guardado em variável, passado como parâmetro e até enviado por outro canal. Rob Pike compara com arquivos: em Erlang é como escrever pelo nome do arquivo, em Go é por um descritor.
 
