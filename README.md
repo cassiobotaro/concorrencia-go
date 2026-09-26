@@ -35,6 +35,7 @@ Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as 
 - [🪟 Janela deslizante](./janelas_deslizantes/README.md): uma fila de tamanho fixo descarta o valor mais antigo quando o consumidor não acompanha.
 - [📨 Requisição e resposta](./requisicao_resposta/README.md): a mensagem carrega o canal em que quem pediu espera a resposta.
 - [🔐 Gorrotina dona do estado](./dono_do_estado/README.md): uma única gorrotina guarda o estado e atende pedidos por canais, com a versão em mutex ao lado.
+- [🛂 Barreira](./barreira/README.md): várias gorrotinas param em um ponto e nenhuma segue até a última chegar.
 - [🏁 Primeiro a responder](./primeiro/README.md): a mesma consulta vai a várias réplicas, vale a primeira resposta e as outras são canceladas.
 - [🤝 Parada com confirmação](./cancelamento/README.md#-parada-com-confirmação): quem manda parar espera a gorrotina liberar recursos, com `cancel()` e `g.Wait()`.
 - [🧩 Combinar sinais de parada (or-channel)](./cancelamento/README.md#-combinar-sinais-de-parada-or-channel): vários motivos de parada viram um canal só, quando não dá para derivar contextos.
