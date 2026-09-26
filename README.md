@@ -6,7 +6,7 @@ No CSP original de Hoare, um processo envia mensagens direto para outro, identif
 
 Outra ideia que volta várias vezes é que [concorrência não é paralelismo](https://go.dev/blog/waza-talk). Concorrência é compor computações independentes, uma forma de estruturar o programa. Paralelismo é executá-las ao mesmo tempo. Um programa concorrente pode rodar em um único processador. E um programa bem estruturado para concorrência costuma paralelizar bem quando há mais de um.
 
-O texto parte do princípio de que você conhece Go, inclusive gorrotinas, canais, `select` e `sync.WaitGroup`. Se alguma dessas peças for nova, passe antes pelo [Tour of Go](https://go.dev/tour/concurrency/1), pelos capítulos de concorrência do [Go by Example](https://gobyexample.com/goroutines), que cobrem canais com e sem buffer, direção, `select`, timeouts, fechamento de canal e `WaitGroup`, e pela seção de concorrência do [Effective Go](https://go.dev/doc/effective_go#concurrency). Os padrões daqui usam essas peças sem explicá-las de novo.
+O texto parte do princípio de que você conhece Go, inclusive gorrotinas, canais, `select` e `sync.WaitGroup`. Se alguma dessas peças for nova, passe antes pelo [Tour of Go](https://go.dev/tour/concurrency/1), pelos capítulos de concorrência do [Go by Example](https://gobyexample.com/goroutines), que cobrem canais com e sem buffer, direção, `select`, timeouts, fechamento de canal e `WaitGroup`, e pela seção de concorrência do [Effective Go](https://go.dev/doc/effective_go#concurrency). Os padrões daqui usam essas peças sem explicá-las de novo. Para uma revisão rápida delas, um capítulo por peça, o livro [Go Concurrency Distilled](https://antonz.org/go-concurrency-distilled/) cobre também o que este material não usa, como `sync.Cond`, `sync.Pool`, atomics, o escalonador e o `pprof`.
 
 Para ir mais fundo em `context`, sugiro também [este repositório](https://github.com/cassiobotaro/contexto).
 
@@ -55,6 +55,7 @@ Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as 
 - [Goroutine Leak Profiles](https://go.dev/blog/goroutine-leak-profiles), Vlad Saioc, 2026.
 - [Go Proverbs](https://go-proverbs.github.io/), Rob Pike, Gopherfest 2015.
 - [Concurrency in Go](https://www.oreilly.com/library/view/concurrency-in-go/9781491941294/), Katherine Cox-Buday, O'Reilly, 2017.
+- [Go Concurrency Distilled](https://antonz.org/go-concurrency-distilled/), Anton Zhiyanov, 2026. Um capítulo por peça da linguagem, com a [versão em PDF](https://github.com/nalgeon/go-conc-distilled) no GitHub.
 - [Apresentação sobre concorrência](https://github.com/andrebq/andrebq.github.io) do @andrebq, de onde vêm boa parte das explicações e dos exemplos.
 - [Tour of Go](https://go.dev/tour/concurrency/1), [Go by Example](https://gobyexample.com/goroutines) e [Effective Go](https://go.dev/doc/effective_go#concurrency), para as peças da linguagem.
 - [golang.org/x/sync/errgroup](https://pkg.go.dev/golang.org/x/sync/errgroup) e [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate).
