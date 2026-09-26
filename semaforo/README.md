@@ -18,4 +18,6 @@ A [versão abaixo](./com_errgroup.go) faz isso. Com três vagas e a tarefa 2 fal
 
 O custo é uma dependência fora da biblioteca padrão. É a única que o código importa. O `staticcheck` que aparece no `go.mod` é ferramenta de análise, declarado com a diretiva `tool`, e não entra no binário. Vale a pena quando as tarefas devolvem erro e uma falha deve interromper as demais, que é o caso comum em código de produção. Quando as tarefas não falham, ou quando cada erro deve ser tratado por conta própria, o canal com buffer e o `WaitGroup` bastam.
 
+> **Vagas com peso.** O mesmo módulo do `errgroup` tem o pacote [`golang.org/x/sync/semaphore`](https://pkg.go.dev/golang.org/x/sync/semaphore). `NewWeighted(n)` cria o semáforo e `Acquire(ctx, peso)` ocupa `peso` vagas de uma vez, então uma tarefa pesada pode valer por duas ou três. A espera pela vaga respeita o contexto, o que o `sem <- struct{}{}` do exemplo só faria dentro de um `select` com `ctx.Done()`.
+
 A variante está em [`com_errgroup.go`](./com_errgroup.go).
