@@ -16,7 +16,7 @@ Os mesmos padrões aparecem com outros nomes em livros e artigos, por isso cada 
 
 Do mais simples ao mais complexo. Os primeiros são a forma dos canais entre as gorrotinas; depois vêm o controle de ritmo, a conversa entre gorrotinas e, por fim, como encerrar e supervisionar.
 
-- [🗺️ Olá mundo](./ola_mundo/README.md): uma gorrotina envia uma mensagem por um canal e a função principal a recebe.
+- [🌍 Olá mundo](./ola_mundo/README.md): uma gorrotina envia uma mensagem por um canal e a função principal a recebe.
 - [🆕 Geradores](./geradores/README.md): uma gorrotina produz uma sequência de valores em um canal e para quando o contexto é cancelado.
 - [🚧 Trabalhador (worker)](./trabalhador/README.md): uma gorrotina consome valores de um canal e avisa, fechando outro, quando terminou.
 - [🏭 Pipeline](./pipeline/README.md): estágios encadeados por canais, cada um transformando o que recebe.

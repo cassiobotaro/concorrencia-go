@@ -1,4 +1,4 @@
-# 🗺️ Olá mundo
+# 🌍 Olá mundo
 
 **Também conhecido como:** o _hello world_ dos canais, o primeiro exemplo do [Tour of Go](https://go.dev/tour/concurrency/2) e do [Go by Example](https://gobyexample.com/channels).
 
