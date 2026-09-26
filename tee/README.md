@@ -10,6 +10,8 @@ O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saí
 
 Como os canais não têm buffer, o tee só passa para o próximo valor depois que todas as saídas receberam o atual. A consequência é que um consumidor lento atrasa todos os outros, e também o produtor. É a [contrapressão](../backpressure/README.md) aplicada ao broadcast. Ninguém perde mensagem, mas todos andam no ritmo do mais lento.
 
+> **Assinantes que entram e saem.** Um _pub/sub_ de verdade guarda uma lista de canais protegida por um mutex. Assinar cria um canal com buffer, o acrescenta à lista sob o mutex e o devolve. Publicar percorre a lista e envia para cada canal com `select` e `default`. O assinante lento perde o valor em vez de segurar os outros, o mesmo descarte do tee com timeout abaixo, só que na hora, sem esperar o prazo. As outras respostas ao consumidor lento são a [contrapressão](../backpressure/README.md), em que o produtor espera, e a [janela deslizante](../janelas_deslizantes/README.md), em que o valor antigo é descartado.
+
 O exemplo inteiro está em [`tee.go`](./tee.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).
 
 ## Tee com timeout
