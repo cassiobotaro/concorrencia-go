@@ -20,6 +20,8 @@ Quando a gorrotina dona do estado compensa?
 - Quando ela precisa reagir a vários canais com `select`, como entradas, prazos e cancelamento. É o caso da janela deslizante.
 - Quando o estado tem ciclo de vida próprio.
 
-Se nada disso se aplica, use o mutex.
+Se nada disso se aplica, use o mutex. Quando as leituras dominam, um `sync.RWMutex` deixa vários `consultar` rodarem juntos, com `RLock`, e só o `incrementar` trava todo mundo.
+
+> **Corrida de dados e condição de corrida.** São duas coisas, e o detector de corrida só pega a primeira. Corrida de dados é duas gorrotinas tocando a mesma variável sem sincronização, com pelo menos uma escrevendo. O `-race`, que o CI liga em todos os testes e exemplos, aponta a linha. Condição de corrida é cada acesso estar protegido e a operação composta não. Imagine um saque escrito com as funções da variante: chama `consultar`, vê saldo 50, e chama uma baixa de 40. Duas gorrotinas fazem isso ao mesmo tempo, as duas veem 50, as duas sacam, e o saldo termina em 30 negativos. Cada chamada travou e destravou o mutex direitinho, então o detector não diz nada. A correção é segurar o mutex durante a operação inteira, da consulta à baixa. Na gorrotina dona do estado isso sai de graça: "saque se houver saldo" vira uma mensagem, e o `select` atende uma por vez.
 
 A variante está em [`com_mutex.go`](./com_mutex.go).
