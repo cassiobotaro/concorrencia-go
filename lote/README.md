@@ -11,7 +11,7 @@ No exemplo, o lote tem capacidade para três itens. Quando o terceiro chega, o l
 Um lote pode ser descarregado de três formas:
 
 - Quando ele enche.
-- Quando o `intervalo` passa sem que ele tenha enchido. Isso é feito com um `time.Timer` dentro do `select`, armado quando o primeiro item do lote chega e parado quando o lote sai, e evita que um item fique esperando companhia por tempo indeterminado. Um `time.Ticker` não serviria: ele marca o tempo por conta própria, e um lote começado logo antes do tick sairia quase vazio. Com o `Timer`, todo lote parcial espera o `intervalo` inteiro a partir do primeiro item.
+- Quando o `intervalo` passa sem que ele tenha enchido. Isso é feito com um `time.Timer` dentro do `select`, armado quando o primeiro item do lote chega e parado quando o lote sai, e evita que um item fique esperando companhia por tempo indeterminado. Um `time.Ticker` não serviria: ele marca o tempo por conta própria, e um lote começado logo antes do tick sairia quase vazio. Com o `Timer`, todo lote parcial espera o `intervalo` inteiro a partir do primeiro item. O `Stop` ao enviar o lote não drena o canal do `Timer`, e isso só é correto desde o Go 1.23, quando `Stop` e `Reset` passaram a descartar o tick pendente. Antes, se o lote enchesse no mesmo instante do disparo, o tick ficava guardado e o lote seguinte sairia cedo, com um item.
 - Sob demanda, pelo canal `descarga`.
 
 No exemplo, o item 6 é enviado sozinho e sai pelo intervalo de 100ms.

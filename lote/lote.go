@@ -45,6 +45,8 @@ func processamentoLotes(entrada <-chan req, descarga <-chan struct{}, tamanhoLot
 			if len(buf) == 0 {
 				return
 			}
+			// Desde o Go 1.23 o Stop descarta um tick pendente; antes era
+			// preciso drenar prazo.C, senão o lote seguinte sairia cedo.
 			prazo.Stop()
 			saida <- buf
 			// Um novo slice é criado em vez de reaproveitar com buf[:0]:
