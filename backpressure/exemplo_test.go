@@ -26,8 +26,8 @@ func TestExemplo(t *testing.T) {
 		saida.ConferirSemOrdem(t, obtida, `
 Produtor: enviou 1
 Produtor: enviou 2
-Produtor: fila cheia, esperando para enviar 3
-Produtor: enviou 3 após esperar
+Produtor: fila cheia ao enviar 3
+Produtor: enviou 3
 Consumidor: leu 1
 Consumidor: leu 2
 Consumidor: leu 3

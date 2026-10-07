@@ -17,12 +17,11 @@ func produtor(saida chan<- int, n int) {
 		// pois o default faz em seguida o envio bloqueante.
 		select {
 		case saida <- i:
-			fmt.Printf("Produtor: enviou %d\n", i)
 		default:
-			fmt.Printf("Produtor: fila cheia, esperando para enviar %d\n", i)
+			fmt.Printf("Produtor: fila cheia ao enviar %d\n", i)
 			saida <- i
-			fmt.Printf("Produtor: enviou %d após esperar\n", i)
 		}
+		fmt.Printf("Produtor: enviou %d\n", i)
 	}
 }
 
