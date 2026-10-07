@@ -40,7 +40,9 @@ func bilheteria(ctx context.Context, tickets chan<- ticket, janela time.Duration
 			return
 		}
 
-		// espera o intervalo mínimo antes de emitir o próximo ticket
+		// espera o intervalo mínimo antes de emitir o próximo ticket. Desde o
+		// Go 1.23 o Reset descarta um tick pendente; antes era preciso drenar
+		// pausa.C, senão o ticket seguinte saía na hora.
 		pausa.Reset(intervalo)
 		select {
 		case <-pausa.C:
