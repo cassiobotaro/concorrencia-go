@@ -52,7 +52,9 @@ func main() {
 	wg.Wait()
 
 	for _, chave := range []string{"gopher", "marmota"} {
-		resposta := make(chan int)
+		// Uma vaga: a gorrotina dona atende todo mundo e não pode ficar
+		// presa respondendo a quem desistiu de esperar.
+		resposta := make(chan int, 1)
 		consultar <- consulta{chave: chave, resposta: resposta}
 		fmt.Printf("dona do estado: %s = %d\n", chave, <-resposta)
 	}

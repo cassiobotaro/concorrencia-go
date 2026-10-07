@@ -6,7 +6,7 @@ O provérbio diz "_Don't communicate by sharing memory, share memory by communic
 
 A palestra [Advanced Go Concurrency Patterns](https://go.dev/talks/2013/advconc.slide), de Sameer Ajmani (2013), apresenta a técnica como um laço `for` com `select` e estado local, e a resume assim: a gorrotina serializa o acesso ao próprio estado mutável, sem mutex, sem variável de condição e sem _callback_. É a primeira das três técnicas da palestra. As outras duas, o canal de resposta e o canal `nil`, estão em [parada com confirmação](../cancelamento/README.md#-parada-com-confirmação) e no [fan-in com select](../fan_in/README.md#fan-in-com-uma-gorrotina-e-select).
 
-No exemplo, a gorrotina `contador` é dona de um mapa de contagem por chave. Três gorrotinas enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](../requisicao_resposta/README.md). O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
+No exemplo, a gorrotina `contador` é dona de um mapa de contagem por chave. Três gorrotinas enviam mil incrementos cada uma pelo canal `incrementar`, e as leituras usam o canal `consultar`, com o canal de resposta dentro da mensagem, como em [requisição e resposta](../requisicao_resposta/README.md), inclusive a vaga de buffer: a gorrotina dona atende todo mundo, e não pode ficar presa respondendo a quem desistiu de esperar. O `select` atende um pedido por vez. Para encerrar, a função principal fecha `incrementar`.
 
 O exemplo inteiro está em [`dono_do_estado.go`](./dono_do_estado.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).
 
