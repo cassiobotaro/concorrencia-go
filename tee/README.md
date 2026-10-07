@@ -10,13 +10,15 @@ O tee lê cada valor da entrada e o envia, em sequência, para cada uma das saí
 
 Como os canais não têm buffer, o tee só passa para o próximo valor depois que todas as saídas receberam o atual. A consequência é que um consumidor lento atrasa todos os outros, e também o produtor. É a [contrapressão](../backpressure/README.md) aplicada ao broadcast. Ninguém perde mensagem, mas todos andam no ritmo do mais lento.
 
+O `context.Context` vai para o gerador e para o tee. Cada envio disputa com `ctx.Done()`, como no [pipeline](../pipeline/README.md). Sem isso, um consumidor que parasse de ler no meio deixaria o tee preso no envio para aquela saída, e o gerador preso atrás dele. Com o cancelamento, o tee sai e fecha as saídas do mesmo jeito.
+
 > **Assinantes que entram e saem.** Um _pub/sub_ de verdade guarda uma lista de canais protegida por um mutex. Assinar cria um canal com buffer, o acrescenta à lista sob o mutex e o devolve. Publicar percorre a lista e envia para cada canal com `select` e `default`. O assinante lento perde o valor em vez de segurar os outros, o mesmo descarte do tee com timeout abaixo, só que na hora, sem esperar o prazo. As outras respostas ao consumidor lento são a [contrapressão](../backpressure/README.md), em que o produtor espera, e a [janela deslizante](../janelas_deslizantes/README.md), em que o valor antigo é descartado.
 
 O exemplo inteiro está em [`tee.go`](./tee.go) e o teste em [`exemplo_test.go`](./exemplo_test.go).
 
 ## Tee com timeout
 
-Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma gorrotina para cada envio.
+Se um consumidor lento não pode segurar os demais, uma alternativa é desistir do envio depois de um tempo. [Nesta variante](./tee_timeout.go), cada envio é feito dentro de um `select` que disputa com `time.After` e com `ctx.Done()`, e vence o que acontecer primeiro. Se o tempo esgotar, o valor é descartado apenas para aquela saída e o tee segue em frente. Um `select` por saída dentro do laço é suficiente, não é preciso criar uma gorrotina para cada envio.
 
 O `time.After` dentro do laço é recriado a cada envio, e o prazo vale para cada valor em cada saída. Até o Go 1.22, cada chamada deixava um timer vivo até disparar, mesmo depois de o `select` ter escolhido outro `case`, e a recomendação era evitar `time.After` em laço. Desde o Go 1.23, um timer que o programa não referencia mais fica disponível para o coletor de lixo, desde que o `go.mod` declare `go 1.23` ou mais novo, como o deste repositório. Em código real o prazo costuma chegar de fora, em um `context.Context` criado com `context.WithTimeout`, e o `case` passa a ser `<-ctx.Done()`. A diferença é que o mesmo prazo vale para a operação inteira e atravessa as funções chamadas. O [primeiro a responder](../primeiro/README.md) faz isso.
 

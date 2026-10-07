@@ -10,16 +10,23 @@ import (
 // tee copia cada valor da entrada para todas as saídas: todos os consumidores
 // veem todos os valores. O envio é sequencial e sem buffer, então o tee só
 // avança quando todas as saídas receberam o valor: um consumidor lento
-// atrasa todos os outros.
-func tee(entrada <-chan int, saidas ...chan<- int) {
+// atrasa todos os outros. Cada envio disputa com ctx.Done(): se um
+// consumidor parar de ler, o tee sai em vez de ficar preso.
+func tee(ctx context.Context, entrada <-chan int, saidas ...chan<- int) {
+	// fecha as saídas ao sair, tanto no fim da entrada quanto no cancelamento
+	defer func() {
+		for _, saida := range saidas {
+			close(saida)
+		}
+	}()
 	for valor := range entrada {
 		for _, saida := range saidas {
-			saida <- valor
+			select {
+			case saida <- valor:
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
-	// Como a entrada foi consumida, fecha os canais de saída
-	for _, saida := range saidas {
-		close(saida)
 	}
 }
 
@@ -60,7 +67,7 @@ func main() {
 	wg.Go(func() { trabalhador(2, saida2, 0) })
 
 	// Copia a sequência de números para todos os canais de saída
-	tee(sequenciaNumeros(ctx, 1, 10), saida1, saida2)
+	tee(ctx, sequenciaNumeros(ctx, 1, 10), saida1, saida2)
 	wg.Wait()
 
 	// Tee com timeout (veja tee_timeout.go): agora o trabalhador 2 é mais lento
@@ -71,6 +78,6 @@ func main() {
 	wg.Go(func() { trabalhador(1, saida1, 0) })
 	wg.Go(func() { trabalhador(2, saida2, 250*time.Millisecond) })
 
-	teeComTimeout(sequenciaNumeros(ctx, 1, 5), 100*time.Millisecond, saida1, saida2)
+	teeComTimeout(ctx, sequenciaNumeros(ctx, 1, 5), 100*time.Millisecond, saida1, saida2)
 	wg.Wait()
 }
