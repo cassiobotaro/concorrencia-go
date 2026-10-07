@@ -26,7 +26,9 @@ func main() {
 	}()
 
 	for i := range 5 {
-		resposta := make(chan int)
+		// Uma vaga: se quem pediu desistir de esperar, o serviço deposita a
+		// resposta e segue, em vez de ficar preso no envio.
+		resposta := make(chan int, 1)
 		entrada <- requisicao{valor: i, resposta: resposta}
 		// Fica bloqueado até o serviço responder
 		fmt.Println("resposta:", <-resposta)
