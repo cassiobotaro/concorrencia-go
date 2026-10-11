@@ -2,7 +2,7 @@ module github.com/cassiobotaro/concorrencia-go
 
 go 1.27.1
 
-require golang.org/x/sync v0.23.0
+require golang.org/x/sync v0.24.0
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
